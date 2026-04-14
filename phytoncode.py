@@ -3,34 +3,31 @@ import numpy as np
 import cv2
 import mediapipe as mp
 import tensorflow as tf
-from collections import deque, Counter
 from gtts import gTTS
 import base64
 
 # -----------------------------
 # PAGE CONFIG
 # -----------------------------
-st.set_page_config(page_title="AI Hand Upload Dashboard", layout="wide")
+st.set_page_config(page_title="AI Hand Detection Pro", layout="wide")
 
 # -----------------------------
-# UI DESIGN
+# UI
 # -----------------------------
 st.markdown("""
 <style>
-.big-title {
-    font-size: 42px;
+.title {
+    font-size: 40px;
     font-weight: 800;
-    color: #00ffd5;
     text-align: center;
+    color: #00ffd5;
 }
-
 .card {
     background: rgba(255,255,255,0.08);
     padding: 15px;
-    border-radius: 18px;
+    border-radius: 15px;
     margin: 10px;
 }
-
 .metric {
     font-size: 26px;
     font-weight: bold;
@@ -66,7 +63,7 @@ def speak(text):
     """, unsafe_allow_html=True)
 
 # -----------------------------
-# LOAD MODEL B
+# MODEL B (Teachable Machine)
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -79,7 +76,12 @@ model = load_model()
 # -----------------------------
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
-hands = mp_hands.Hands(static_image_mode=True)
+
+hands = mp_hands.Hands(
+    static_image_mode=True,
+    max_num_hands=1,
+    min_detection_confidence=0.5
+)
 
 # -----------------------------
 # PREPROCESS
@@ -92,18 +94,22 @@ def preprocess(img):
 # -----------------------------
 # TITLE
 # -----------------------------
-st.markdown('<div class="big-title">🤖 AI Hand Gesture Comparison (UPLOAD MODE)</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🤖 AI Hand Detection & Comparison System</div>', unsafe_allow_html=True)
 
 # -----------------------------
-# UPLOAD IMAGE
+# UPLOAD
 # -----------------------------
-uploaded_file = st.file_uploader("📸 Upload Hand Image", type=["jpg", "png", "jpeg"])
+uploaded_file = st.file_uploader("📸 Upload Hand Image", type=["jpg","png","jpeg"])
 
 if uploaded_file is not None:
 
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
 
+    # -------------------------
+    # IMPROVED IMAGE PROCESSING
+    # -------------------------
+    img = cv2.convertScaleAbs(img, alpha=1.2, beta=10)  # contrast boost
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # -------------------------
@@ -111,12 +117,13 @@ if uploaded_file is not None:
     # -------------------------
     result = hands.process(rgb)
 
-    model_a = "❌ No Hand Detected"
-
     if result.multi_hand_landmarks:
         model_a = "🟢 Hand Detected"
+
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+    else:
+        model_a = "❌ No Hand Detected (try clearer image)"
 
     # -------------------------
     # MODEL B (ML)
@@ -147,7 +154,7 @@ if uploaded_file is not None:
 
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 🟣 Model B (Teachable Machine)")
+        st.markdown("### 🟣 Model B (AI Model)")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
         st.progress(float(conf))
         st.write(f"Confidence: {conf:.2f}")
@@ -159,7 +166,7 @@ if uploaded_file is not None:
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # -----------------------------
-    # SHOW IMAGE
-    # -----------------------------
-    st.image(img, channels="BGR", caption="Uploaded Image")
+    # -------------------------
+    # IMAGE OUTPUT
+    # -------------------------
+    st.image(img, channels="BGR", caption="Processed Image")
