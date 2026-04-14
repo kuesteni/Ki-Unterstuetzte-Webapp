@@ -3,46 +3,43 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import tensorflow as tf
-from collections import deque, Counter
 import pyttsx3
-import time
+from collections import deque, Counter
 
 # -----------------------------
 # PAGE CONFIG
 # -----------------------------
-st.set_page_config(page_title="AI Hand Translator", layout="wide")
+st.set_page_config(page_title="AI Hand Dashboard", layout="wide")
 
 # -----------------------------
-# CUSTOM CSS (🔥 FANCY UI)
+# DASHBOARD CSS
 # -----------------------------
 st.markdown("""
 <style>
-body {
-    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-    color: white;
-}
-
-.big-text {
-    font-size: 48px;
-    font-weight: bold;
+.big-title {
+    font-size: 42px;
+    font-weight: 800;
+    color: #00ffd5;
+    text-align: center;
 }
 
 .card {
-    background: rgba(255,255,255,0.1);
-    padding: 20px;
-    border-radius: 20px;
+    background: rgba(255,255,255,0.08);
+    padding: 15px;
+    border-radius: 18px;
     backdrop-filter: blur(10px);
+    margin: 5px;
 }
 
-.word-box {
-    font-size: 40px;
+.metric {
+    font-size: 26px;
     font-weight: bold;
-    color: #00ffcc;
+    color: #ffffff;
 }
 
-.conf-bar {
-    height: 20px;
-    border-radius: 10px;
+.sub {
+    font-size: 14px;
+    color: #aaa;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -50,8 +47,8 @@ body {
 # -----------------------------
 # CONFIG
 # -----------------------------
-CONFIDENCE_THRESHOLD = 0.85
-STABILITY_FRAMES = 10
+CONF_THRESHOLD = 0.85
+FRAME_STABILITY = 8
 IMG_SIZE = 224
 
 CLASSES = [
@@ -63,13 +60,12 @@ CLASSES = [
 # TTS
 # -----------------------------
 engine = pyttsx3.init()
-
 def speak(text):
     engine.say(text)
     engine.runAndWait()
 
 # -----------------------------
-# MODEL
+# MODEL B (Teachable Machine)
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -78,45 +74,11 @@ def load_model():
 model = load_model()
 
 # -----------------------------
-# MEDIAPIPE
+# MEDIA PIPE (Model A)
 # -----------------------------
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(max_num_hands=1)
-
-# -----------------------------
-# HEADER
-# -----------------------------
-st.markdown('<div class="big-text">🤖 AI Hand Gesture Translator</div>', unsafe_allow_html=True)
-
-col_lang, col_stats = st.columns([1,3])
-
-with col_lang:
-    lang = st.radio("🌐 Language", ["EN", "DE"])
-
-with col_stats:
-    st.markdown("### 📊 Live System Status")
-
-# -----------------------------
-# LAYOUT
-# -----------------------------
-col1, col2 = st.columns([2,1])
-
-FRAME_WINDOW = col1.image([])
-
-with col2:
-    word_placeholder = st.empty()
-    confidence_placeholder = st.empty()
-    history_placeholder = st.empty()
-
-# -----------------------------
-# STATE
-# -----------------------------
-prediction_buffer = deque(maxlen=STABILITY_FRAMES)
-history = deque(maxlen=10)
-
-current_word = ""
-last_output = ""
 
 # -----------------------------
 # PREPROCESS
@@ -127,16 +89,30 @@ def preprocess(frame):
     return np.expand_dims(img, axis=0)
 
 # -----------------------------
-# CAMERA
+# TITLE
 # -----------------------------
-run = st.checkbox("🚀 Start Camera")
+st.markdown('<div class="big-title">🤖 AI Hand Gesture Comparison Dashboard</div>', unsafe_allow_html=True)
+
+run = st.checkbox("🚀 Start System")
+
+frame_slot = st.image([])
+
+# -----------------------------
+# STATE
+# -----------------------------
+buffer = deque(maxlen=FRAME_STABILITY)
+history = deque(maxlen=8)
+
+word = ""
+last = ""
 
 cap = cv2.VideoCapture(0)
 
 # -----------------------------
-# LOOP
+# MAIN LOOP
 # -----------------------------
 while run:
+
     ret, frame = cap.read()
     if not ret:
         break
@@ -144,64 +120,105 @@ while run:
     frame = cv2.flip(frame, 1)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    # MediaPipe Overlay
+    # -------------------------
+    # MODEL A (MediaPipe)
+    # -------------------------
     result = hands.process(rgb)
+
+    model_a_status = "❌ No Hand"
     if result.multi_hand_landmarks:
+        model_a_status = "🟢 Hand Detected"
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-    # Prediction
-    input_img = preprocess(rgb)
-    preds = model.predict(input_img, verbose=0)[0]
+    # -------------------------
+    # MODEL B (AI CLASSIFIER)
+    # -------------------------
+    img_input = preprocess(rgb)
+    preds = model.predict(img_input, verbose=0)[0]
 
     idx = np.argmax(preds)
-    confidence = preds[idx]
-    prediction = CLASSES[idx]
+    conf = preds[idx]
+    label = CLASSES[idx]
 
-    # Confidence Bar UI
-    confidence_placeholder.progress(float(confidence))
+    # -------------------------
+    # FILTER
+    # -------------------------
+    if conf > CONF_THRESHOLD:
+        buffer.append(label)
 
-    # Filter
-    if confidence > CONFIDENCE_THRESHOLD:
-        prediction_buffer.append(prediction)
+    # -------------------------
+    # STABLE OUTPUT
+    # -------------------------
+    if len(buffer) == FRAME_STABILITY:
+        stable = Counter(buffer).most_common(1)[0][0]
 
-    # Stabilisierung
-    if len(prediction_buffer) == STABILITY_FRAMES:
-        most_common = Counter(prediction_buffer).most_common(1)[0][0]
+        if stable != last:
+            last = stable
+            history.append(stable)
 
-        if most_common != last_output:
-            last_output = most_common
-            history.append(most_common)
-
-            if most_common == "F":
-                current_word = current_word[:-1]
-
-            elif most_common == "Y":
-                current_word = ""
-
+            if stable == "F":
+                word = word[:-1]
+            elif stable == "Y":
+                word = ""
             else:
-                current_word += most_common
-                speak(most_common)
+                word += stable
+                speak(stable)
 
-    # -----------------------------
-    # UI UPDATE
-    # -----------------------------
-    word_placeholder.markdown(
-        f'<div class="card"><div class="word-box">{current_word}</div></div>',
-        unsafe_allow_html=True
-    )
+    # -------------------------
+    # DASHBOARD ROW 1 (METRICS)
+    # -------------------------
+    col1, col2, col3 = st.columns(3)
 
-    history_placeholder.markdown(
-        f'<div class="card">History: {" ".join(history)}</div>',
-        unsafe_allow_html=True
-    )
+    with col1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("### 🔵 Model A")
+        st.markdown(f"<div class='metric'>{model_a_status}</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sub'>MediaPipe Hand Tracking</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if confidence > CONFIDENCE_THRESHOLD:
-        cv2.putText(frame, f"{prediction} ({confidence:.2f})",
-                    (10, 50),
+    with col2:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("### 🟣 Model B")
+        st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
+        st.progress(float(conf))
+        st.markdown(f"<div class='sub'>Confidence: {conf:.2f}</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col3:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("### 🟢 Final Word")
+        st.markdown(f"<div class='metric'>{word}</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # -------------------------
+    # ROW 2 (HISTORY + COMPARISON)
+    # -------------------------
+    col4, col5 = st.columns(2)
+
+    with col4:
+        st.markdown("### 📜 History")
+        st.write(" ".join(history))
+
+    with col5:
+        st.markdown("### ⚖️ Comparison")
+
+        if model_a_status == "🟢 Hand Detected" and conf > CONF_THRESHOLD:
+            st.success("Both models active → comparing results")
+        elif conf > CONF_THRESHOLD:
+            st.info("Model B active only")
+        else:
+            st.warning("No stable prediction")
+
+    # -------------------------
+    # FRAME
+    # -------------------------
+    if conf > CONF_THRESHOLD:
+        cv2.putText(frame, f"{label} {conf:.2f}",
+                    (10,50),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    1, (0,255,0), 2)
+                    1,(0,255,0),2)
 
-    FRAME_WINDOW.image(frame, channels="BGR")
+    frame_slot.image(frame, channels="BGR")
 
 cap.release()
