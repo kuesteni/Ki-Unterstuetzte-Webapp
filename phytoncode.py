@@ -44,7 +44,7 @@ TEXT = {
 T = TEXT[lang]
 
 # -----------------------------
-# UI STYLE
+# UI
 # -----------------------------
 st.markdown("""
 <style>
@@ -56,7 +56,6 @@ st.markdown("""
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
-
 .card {
     background: rgba(255,255,255,0.08);
     border-radius: 18px;
@@ -64,7 +63,6 @@ st.markdown("""
     box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     backdrop-filter: blur(10px);
 }
-
 .metric {
     font-size: 26px;
     font-weight: bold;
@@ -72,9 +70,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# HEADER
-# -----------------------------
 colL, colR = st.columns([6,1])
 
 with colL:
@@ -93,14 +88,13 @@ def load_model():
 model = load_model()
 
 # -----------------------------
-# 20 CLASSES (ML MODEL)
+# LABELS (SAFE LOADER)
 # -----------------------------
-CLASS_MAP = {
-    0:"0",1:"1",2:"2",3:"3",4:"4",
-    5:"5",6:"6",7:"7",8:"8",9:"9",
-    10:"A",11:"B",12:"C",13:"L",14:"V",
-    15:"O",16:"I",17:"Y",18:"U",19:"F"
-}
+def load_labels():
+    with open("labels.txt", "r") as f:
+        return [line.strip() for line in f.readlines()]
+
+CLASS_NAMES = load_labels()
 
 # -----------------------------
 # MEDIA PIPE
@@ -111,43 +105,34 @@ mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=True,
     max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
+    min_detection_confidence=0.7
 )
 
 # -----------------------------
-# 🔥 MODEL A: 20-KLASSEN HEURISTIK
+# HEURISTIC MODEL A
 # -----------------------------
 def get_fingers(lm):
     return [
-        1 if lm[4].x < lm[3].x else 0,   # thumb
-        1 if lm[8].y < lm[6].y else 0,   # index
-        1 if lm[12].y < lm[10].y else 0, # middle
-        1 if lm[16].y < lm[14].y else 0, # ring
-        1 if lm[20].y < lm[18].y else 0  # pinky
+        1 if lm[4].x < lm[3].x else 0,
+        1 if lm[8].y < lm[6].y else 0,
+        1 if lm[12].y < lm[10].y else 0,
+        1 if lm[16].y < lm[14].y else 0,
+        1 if lm[20].y < lm[18].y else 0
     ]
 
-def heuristic_20_class(f):
-    t,i,m,r,p = f
-
-    # NUMBERS
-    if f == [0,1,0,0,0]: return "1"
-    if f == [0,1,1,0,0]: return "2"
-    if f == [0,1,1,1,0]: return "3"
-    if f == [0,1,1,1,1]: return "4"
-    if f == [1,1,1,1,1]: return "5"
-
-    # LETTERS (simplified stable mapping)
-    if f == [1,0,0,0,0]: return "A"
-    if f == [0,1,0,0,0]: return "D"
-    if f == [0,0,0,0,0]: return "B"
-    if f == [0,1,0,0,1]: return "U"
-    if f == [0,1,0,1,1]: return "W"
-    if f == [1,1,0,0,0]: return "L"
-    if f == [1,0,0,0,1]: return "Y"
-    if f == [0,0,1,0,0]: return "I"
-
-    return "Unknown"
+def heuristic_label(f):
+    mapping = {
+        (0,0,0,0,0): "Fist",
+        (1,1,1,1,1): "Open Hand",
+        (0,1,0,0,0): "1",
+        (0,1,1,0,0): "2",
+        (0,1,1,1,0): "3",
+        (0,1,1,1,1): "4",
+        (1,1,0,0,0): "L",
+        (1,0,0,0,1): "Y",
+        (0,0,1,0,0): "I",
+    }
+    return mapping.get(tuple(f), f"Unknown {f}")
 
 # -----------------------------
 # PREPROCESS
@@ -185,11 +170,10 @@ if uploaded_file:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
 
-    img = cv2.convertScaleAbs(img, alpha=1.2, beta=10)
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # -------------------------
-    # MODEL A (HEURISTIC 20 CLASS)
+    # MODEL A
     # -------------------------
     result = hands.process(rgb)
 
@@ -200,25 +184,25 @@ if uploaded_file:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
             fingers = get_fingers(hand_landmarks.landmark)
-            model_a_label = heuristic_20_class(fingers)
+            model_a_label = heuristic_label(fingers)
 
     # -------------------------
-    # MODEL B (AI)
+    # MODEL B (FIXED LABELS)
     # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
 
     idx = int(np.argmax(preds))
     conf = float(preds[idx])
 
-    label = CLASS_MAP.get(idx, "Unknown")
+    label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
 
-    final = f"{label} | {conf:.2f}" if conf > 0.85 else "Uncertain"
+    final = f"{label} ({conf:.2f})" if conf > 0.85 else "Uncertain"
 
     if conf > 0.85:
         speak(label)
 
     # -------------------------
-    # DASHBOARD
+    # UI
     # -------------------------
     col1, col2, col3 = st.columns(3)
 
@@ -226,23 +210,18 @@ if uploaded_file:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🔵 {T['modelA']}")
         st.markdown(f"<div class='metric'>{model_a_label}</div>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟣 {T['modelB']}")
-        st.markdown(f"<div class='metric'>🧠 {label}</div>", unsafe_allow_html=True)
-
+        st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
         st.write(f"Index: {idx}")
         st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
-
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟢 {T['final']}")
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     st.image(img, channels="BGR")
