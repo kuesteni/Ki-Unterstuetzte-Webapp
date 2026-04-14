@@ -22,14 +22,11 @@ def toggle_lang():
 
 lang = st.session_state.lang
 
-# -----------------------------
-# TEXTS
-# -----------------------------
 TEXT = {
     "EN": {
         "title": "🤖 AI Hand Recognition System",
         "upload": "Upload Image",
-        "modelA": "Model A (MediaPipe)",
+        "modelA": "Model A (Heuristics)",
         "modelB": "Model B (AI Model)",
         "final": "Final Result",
         "nohand": "No Hand Detected",
@@ -38,7 +35,7 @@ TEXT = {
     "DE": {
         "title": "🤖 KI Hand Erkennungssystem",
         "upload": "Bild hochladen",
-        "modelA": "Modell A (MediaPipe)",
+        "modelA": "Modell A (Heuristik)",
         "modelB": "Modell B (KI Modell)",
         "final": "Endergebnis",
         "nohand": "Keine Hand erkannt",
@@ -71,7 +68,7 @@ st.markdown("""
 }
 
 .metric {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: bold;
 }
 </style>
@@ -89,7 +86,7 @@ with colR:
     st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
 
 # -----------------------------
-# MODEL B
+# MODEL B (AI)
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -98,29 +95,13 @@ def load_model():
 model = load_model()
 
 # -----------------------------
-# 🔥 20-KLASSEN MAPPING (FIX)
+# CLASSES
 # -----------------------------
 CLASS_MAP = {
-    0: "0",
-    1: "1",
-    2: "2",
-    3: "3",
-    4: "4",
-    5: "5",
-    6: "6",
-    7: "7",
-    8: "8",
-    9: "9",
-    10: "A",
-    11: "B",
-    12: "C",
-    13: "L",
-    14: "V",
-    15: "O",
-    16: "I",
-    17: "Y",
-    18: "U",
-    19: "F"
+    0: "0",1: "1",2: "2",3: "3",4: "4",
+    5: "5",6: "6",7: "7",8: "8",9: "9",
+    10: "A",11: "B",12: "C",13: "L",14: "V",
+    15: "O",16: "I",17: "Y",18: "U",19: "F"
 }
 
 # -----------------------------
@@ -134,6 +115,44 @@ hands = mp_hands.Hands(
     max_num_hands=1,
     min_detection_confidence=0.5
 )
+
+# -----------------------------
+# HEURISTIC MODEL A
+# -----------------------------
+def count_fingers(hand_landmarks):
+    tips = [8, 12, 16, 20]
+    fingers = []
+
+    # thumb
+    if hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x:
+        fingers.append(1)
+    else:
+        fingers.append(0)
+
+    # other fingers
+    for tip in tips:
+        if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
+            fingers.append(1)
+        else:
+            fingers.append(0)
+
+    return sum(fingers)
+
+def heuristic_label(count):
+    if count == 0:
+        return "Fist (0)"
+    elif count == 1:
+        return "1 Finger"
+    elif count == 2:
+        return "V / Peace"
+    elif count == 3:
+        return "3 Fingers"
+    elif count == 4:
+        return "4 Fingers"
+    elif count == 5:
+        return "Open Hand (5)"
+    else:
+        return "Unknown"
 
 # -----------------------------
 # PREPROCESS
@@ -175,20 +194,21 @@ if uploaded_file:
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # -------------------------
-    # MODEL A
+    # MODEL A (HEURISTIC)
     # -------------------------
     result = hands.process(rgb)
 
     if result.multi_hand_landmarks:
-        model_a = "🟢 " + T["hand"]
-
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            finger_count = count_fingers(hand_landmarks)
+            model_a_label = heuristic_label(finger_count)
     else:
-        model_a = "🔴 " + T["nohand"]
+        model_a_label = T["nohand"]
 
     # -------------------------
-    # MODEL B (20 CLASSES FIX)
+    # MODEL B (AI MODEL)
     # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
 
@@ -197,10 +217,8 @@ if uploaded_file:
 
     label = CLASS_MAP.get(idx, "Unknown")
 
-    # FINAL OUTPUT
     final = f"{label} | Class {idx} | {conf:.2f}" if conf > 0.85 else "Uncertain"
 
-    # speech
     if conf > 0.85:
         speak(label)
 
@@ -212,7 +230,7 @@ if uploaded_file:
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🔵 {T['modelA']}")
-        st.markdown(f"<div class='metric'>{model_a}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'>{model_a_label}</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
