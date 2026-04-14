@@ -1,17 +1,16 @@
 import streamlit as st
-import cv2
 import numpy as np
+import cv2
 import mediapipe as mp
 import tensorflow as tf
 from collections import deque, Counter
 from gtts import gTTS
 import base64
-import os
 
 # -----------------------------
 # PAGE CONFIG
 # -----------------------------
-st.set_page_config(page_title="AI Hand Dashboard", layout="wide")
+st.set_page_config(page_title="AI Hand Upload Dashboard", layout="wide")
 
 # -----------------------------
 # UI DESIGN
@@ -29,8 +28,7 @@ st.markdown("""
     background: rgba(255,255,255,0.08);
     padding: 15px;
     border-radius: 18px;
-    backdrop-filter: blur(10px);
-    margin: 5px;
+    margin: 10px;
 }
 
 .metric {
@@ -43,9 +41,8 @@ st.markdown("""
 # -----------------------------
 # CONFIG
 # -----------------------------
-CONF_THRESHOLD = 0.85
-FRAME_STABILITY = 8
 IMG_SIZE = 224
+CONF_THRESHOLD = 0.85
 
 CLASSES = [
     "0","1","2","3","4","5","6","7","8","9",
@@ -59,20 +56,17 @@ def speak(text):
     tts = gTTS(text=text, lang="en")
     tts.save("speech.mp3")
 
-    with open("speech.mp3", "rb") as f:
-        audio_bytes = f.read()
+    audio = open("speech.mp3", "rb").read()
+    b64 = base64.b64encode(audio).decode()
 
-    b64 = base64.b64encode(audio_bytes).decode()
-
-    audio_html = f"""
+    st.markdown(f"""
     <audio autoplay>
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
     </audio>
-    """
-    st.markdown(audio_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # -----------------------------
-# LOAD MODEL B (Teachable Machine)
+# LOAD MODEL B
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -85,138 +79,87 @@ model = load_model()
 # -----------------------------
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
-hands = mp_hands.Hands(max_num_hands=1)
+hands = mp_hands.Hands(static_image_mode=True)
 
 # -----------------------------
 # PREPROCESS
 # -----------------------------
-def preprocess(frame):
-    img = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
+def preprocess(img):
+    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
     return np.expand_dims(img, axis=0)
 
 # -----------------------------
 # TITLE
 # -----------------------------
-st.markdown('<div class="big-title">🤖 AI Hand Comparison Dashboard</div>', unsafe_allow_html=True)
-
-run = st.checkbox("🚀 Start Camera")
-
-frame_placeholder = st.image([])
+st.markdown('<div class="big-title">🤖 AI Hand Gesture Comparison (UPLOAD MODE)</div>', unsafe_allow_html=True)
 
 # -----------------------------
-# STATE
+# UPLOAD IMAGE
 # -----------------------------
-buffer = deque(maxlen=FRAME_STABILITY)
-history = deque(maxlen=10)
+uploaded_file = st.file_uploader("📸 Upload Hand Image", type=["jpg", "png", "jpeg"])
 
-word = ""
-last = ""
+if uploaded_file is not None:
 
-cap = cv2.VideoCapture(0)
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1)
 
-# -----------------------------
-# MAIN LOOP
-# -----------------------------
-while run:
-
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    frame = cv2.flip(frame, 1)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # -------------------------
     # MODEL A (MediaPipe)
     # -------------------------
     result = hands.process(rgb)
 
-    model_a_status = "❌ No Hand"
+    model_a = "❌ No Hand Detected"
+
     if result.multi_hand_landmarks:
-        model_a_status = "🟢 Hand Detected"
+        model_a = "🟢 Hand Detected"
         for hand_landmarks in result.multi_hand_landmarks:
-            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
     # -------------------------
-    # MODEL B (AI CLASSIFIER)
+    # MODEL B (ML)
     # -------------------------
-    img_input = preprocess(rgb)
-    preds = model.predict(img_input, verbose=0)[0]
+    input_img = preprocess(rgb)
+    preds = model.predict(input_img, verbose=0)[0]
 
     idx = np.argmax(preds)
     conf = preds[idx]
     label = CLASSES[idx]
 
-    # -------------------------
-    # FILTER
-    # -------------------------
     if conf > CONF_THRESHOLD:
-        buffer.append(label)
+        final = label
+        speak(label)
+    else:
+        final = "Uncertain"
 
     # -------------------------
-    # STABLE OUTPUT
-    # -------------------------
-    if len(buffer) == FRAME_STABILITY:
-        stable = Counter(buffer).most_common(1)[0][0]
-
-        if stable != last:
-            last = stable
-            history.append(stable)
-
-            # DELETE
-            if stable == "F":
-                word = word[:-1]
-
-            # RESET
-            elif stable == "Y":
-                word = ""
-
-            else:
-                word += stable
-
-                # 🔊 SOUND
-                speak(stable)
-
-    # -------------------------
-    # DASHBOARD UI
+    # DASHBOARD
     # -------------------------
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 🔵 Model A")
-        st.markdown(f"<div class='metric'>{model_a_status}</div>", unsafe_allow_html=True)
+        st.markdown("### 🔵 Model A (MediaPipe)")
+        st.markdown(f"<div class='metric'>{model_a}</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 🟣 Model B")
+        st.markdown("### 🟣 Model B (Teachable Machine)")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
         st.progress(float(conf))
-        st.markdown(f"Confidence: {conf:.2f}")
+        st.write(f"Confidence: {conf:.2f}")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 🟢 Word")
-        st.markdown(f"<div class='metric'>{word}</div>", unsafe_allow_html=True)
+        st.markdown("### 🟢 Final Result")
+        st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # -------------------------
-    # HISTORY
-    # -------------------------
-    st.write("📜 History:", " ".join(history))
-
-    # -------------------------
-    # FRAME
-    # -------------------------
-    if conf > CONF_THRESHOLD:
-        cv2.putText(frame, f"{label} {conf:.2f}",
-                    (10,50),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,(0,255,0),2)
-
-    frame_placeholder.image(frame, channels="BGR")
-
-cap.release()
+    # -----------------------------
+    # SHOW IMAGE
+    # -----------------------------
+    st.image(img, channels="BGR", caption="Uploaded Image")
