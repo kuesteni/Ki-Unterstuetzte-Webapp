@@ -30,7 +30,6 @@ TEXT = {
         "modelB": "Model B (Neural Network)",
         "final": "Final Result",
         "nohand": "No Hand Detected",
-        "hand": "Hand Detected"
     },
     "DE": {
         "title": "🤖 KI Hand Erkennungssystem",
@@ -39,7 +38,6 @@ TEXT = {
         "modelB": "Modell B (Neuronales Netz)",
         "final": "Endergebnis",
         "nohand": "Keine Hand erkannt",
-        "hand": "Hand erkannt"
     }
 }
 
@@ -86,7 +84,7 @@ with colR:
     st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
 
 # -----------------------------
-# MODEL B (AI)
+# MODEL B
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -95,7 +93,7 @@ def load_model():
 model = load_model()
 
 # -----------------------------
-# CLASSES
+# 20 CLASSES (ML MODEL)
 # -----------------------------
 CLASS_MAP = {
     0:"0",1:"1",2:"2",3:"3",4:"4",
@@ -118,48 +116,38 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# 🔥 STABILE HEURISTIK (FIX)
+# 🔥 MODEL A: 20-KLASSEN HEURISTIK
 # -----------------------------
-def get_finger_states(hand_landmarks):
-    lm = hand_landmarks.landmark
+def get_fingers(lm):
+    return [
+        1 if lm[4].x < lm[3].x else 0,   # thumb
+        1 if lm[8].y < lm[6].y else 0,   # index
+        1 if lm[12].y < lm[10].y else 0, # middle
+        1 if lm[16].y < lm[14].y else 0, # ring
+        1 if lm[20].y < lm[18].y else 0  # pinky
+    ]
 
-    fingers = []
+def heuristic_20_class(f):
+    t,i,m,r,p = f
 
-    # Thumb (robust)
-    fingers.append(1 if lm[4].x < lm[3].x else 0)
+    # NUMBERS
+    if f == [0,1,0,0,0]: return "1"
+    if f == [0,1,1,0,0]: return "2"
+    if f == [0,1,1,1,0]: return "3"
+    if f == [0,1,1,1,1]: return "4"
+    if f == [1,1,1,1,1]: return "5"
 
-    # Index
-    fingers.append(1 if lm[8].y < lm[6].y else 0)
+    # LETTERS (simplified stable mapping)
+    if f == [1,0,0,0,0]: return "A"
+    if f == [0,1,0,0,0]: return "D"
+    if f == [0,0,0,0,0]: return "B"
+    if f == [0,1,0,0,1]: return "U"
+    if f == [0,1,0,1,1]: return "W"
+    if f == [1,1,0,0,0]: return "L"
+    if f == [1,0,0,0,1]: return "Y"
+    if f == [0,0,1,0,0]: return "I"
 
-    # Middle
-    fingers.append(1 if lm[12].y < lm[10].y else 0)
-
-    # Ring
-    fingers.append(1 if lm[16].y < lm[14].y else 0)
-
-    # Pinky
-    fingers.append(1 if lm[20].y < lm[18].y else 0)
-
-    return fingers
-
-def gesture_from_fingers(f):
-    # mapping
-    if f == [0,0,0,0,0]:
-        return "Fist (0)"
-
-    if f == [1,1,1,1,1]:
-        return "Open Hand (5)"
-
-    if f == [0,1,1,0,0]:
-        return "V / Peace"
-
-    if f == [0,1,0,0,0]:
-        return "1 Finger"
-
-    if f == [1,0,0,0,0]:
-        return "Thumbs"
-
-    return f"Unknown {f}"
+    return "Unknown"
 
 # -----------------------------
 # PREPROCESS
@@ -201,18 +189,18 @@ if uploaded_file:
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # -------------------------
-    # MODEL A (FIXED HEURISTIC)
+    # MODEL A (HEURISTIC 20 CLASS)
     # -------------------------
     result = hands.process(rgb)
 
-    model_a_label = "No Hand"
+    model_a_label = T["nohand"]
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            fingers = get_finger_states(hand_landmarks)
-            model_a_label = gesture_from_fingers(fingers)
+            fingers = get_fingers(hand_landmarks.landmark)
+            model_a_label = heuristic_20_class(fingers)
 
     # -------------------------
     # MODEL B (AI)
@@ -224,14 +212,14 @@ if uploaded_file:
 
     label = CLASS_MAP.get(idx, "Unknown")
 
-    final = f"{label} | Class {idx} | {conf:.2f}" if conf > 0.85 else "Uncertain"
+    final = f"{label} | {conf:.2f}" if conf > 0.85 else "Uncertain"
 
     if conf > 0.85:
         speak(label)
 
-    # -----------------------------
+    # -------------------------
     # DASHBOARD
-    # -----------------------------
+    # -------------------------
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -245,9 +233,9 @@ if uploaded_file:
         st.markdown(f"### 🟣 {T['modelB']}")
         st.markdown(f"<div class='metric'>🧠 {label}</div>", unsafe_allow_html=True)
 
-        st.write(f"🔢 Class Index: {idx}")
-        st.write(f"📊 Confidence: {conf:.2f}")
-        st.progress(float(conf))
+        st.write(f"Index: {idx}")
+        st.write(f"Confidence: {conf:.2f}")
+        st.progress(conf)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
