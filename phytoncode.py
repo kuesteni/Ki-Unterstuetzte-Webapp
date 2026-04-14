@@ -26,8 +26,8 @@ TEXT = {
     "EN": {
         "title": "🤖 AI Hand Recognition System",
         "upload": "Upload Image",
-        "modelA": "Model A (Heuristics)",
-        "modelB": "Model B (AI Model)",
+        "modelA": "Model A (Heuristic AI)",
+        "modelB": "Model B (Neural Network)",
         "final": "Final Result",
         "nohand": "No Hand Detected",
         "hand": "Hand Detected"
@@ -35,8 +35,8 @@ TEXT = {
     "DE": {
         "title": "🤖 KI Hand Erkennungssystem",
         "upload": "Bild hochladen",
-        "modelA": "Modell A (Heuristik)",
-        "modelB": "Modell B (KI Modell)",
+        "modelA": "Modell A (Heuristik KI)",
+        "modelB": "Modell B (Neuronales Netz)",
         "final": "Endergebnis",
         "nohand": "Keine Hand erkannt",
         "hand": "Hand erkannt"
@@ -98,10 +98,10 @@ model = load_model()
 # CLASSES
 # -----------------------------
 CLASS_MAP = {
-    0: "0",1: "1",2: "2",3: "3",4: "4",
-    5: "5",6: "6",7: "7",8: "8",9: "9",
-    10: "A",11: "B",12: "C",13: "L",14: "V",
-    15: "O",16: "I",17: "Y",18: "U",19: "F"
+    0:"0",1:"1",2:"2",3:"3",4:"4",
+    5:"5",6:"6",7:"7",8:"8",9:"9",
+    10:"A",11:"B",12:"C",13:"L",14:"V",
+    15:"O",16:"I",17:"Y",18:"U",19:"F"
 }
 
 # -----------------------------
@@ -113,46 +113,53 @@ mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=True,
     max_num_hands=1,
-    min_detection_confidence=0.5
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
 )
 
 # -----------------------------
-# HEURISTIC MODEL A
+# 🔥 STABILE HEURISTIK (FIX)
 # -----------------------------
-def count_fingers(hand_landmarks):
-    tips = [8, 12, 16, 20]
+def get_finger_states(hand_landmarks):
+    lm = hand_landmarks.landmark
+
     fingers = []
 
-    # thumb
-    if hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x:
-        fingers.append(1)
-    else:
-        fingers.append(0)
+    # Thumb (robust)
+    fingers.append(1 if lm[4].x < lm[3].x else 0)
 
-    # other fingers
-    for tip in tips:
-        if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
-            fingers.append(1)
-        else:
-            fingers.append(0)
+    # Index
+    fingers.append(1 if lm[8].y < lm[6].y else 0)
 
-    return sum(fingers)
+    # Middle
+    fingers.append(1 if lm[12].y < lm[10].y else 0)
 
-def heuristic_label(count):
-    if count == 0:
+    # Ring
+    fingers.append(1 if lm[16].y < lm[14].y else 0)
+
+    # Pinky
+    fingers.append(1 if lm[20].y < lm[18].y else 0)
+
+    return fingers
+
+def gesture_from_fingers(f):
+    # mapping
+    if f == [0,0,0,0,0]:
         return "Fist (0)"
-    elif count == 1:
-        return "1 Finger"
-    elif count == 2:
-        return "V / Peace"
-    elif count == 3:
-        return "3 Fingers"
-    elif count == 4:
-        return "4 Fingers"
-    elif count == 5:
+
+    if f == [1,1,1,1,1]:
         return "Open Hand (5)"
-    else:
-        return "Unknown"
+
+    if f == [0,1,1,0,0]:
+        return "V / Peace"
+
+    if f == [0,1,0,0,0]:
+        return "1 Finger"
+
+    if f == [1,0,0,0,0]:
+        return "Thumbs"
+
+    return f"Unknown {f}"
 
 # -----------------------------
 # PREPROCESS
@@ -194,21 +201,21 @@ if uploaded_file:
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # -------------------------
-    # MODEL A (HEURISTIC)
+    # MODEL A (FIXED HEURISTIC)
     # -------------------------
     result = hands.process(rgb)
+
+    model_a_label = "No Hand"
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            finger_count = count_fingers(hand_landmarks)
-            model_a_label = heuristic_label(finger_count)
-    else:
-        model_a_label = T["nohand"]
+            fingers = get_finger_states(hand_landmarks)
+            model_a_label = gesture_from_fingers(fingers)
 
     # -------------------------
-    # MODEL B (AI MODEL)
+    # MODEL B (AI)
     # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
 
@@ -222,9 +229,9 @@ if uploaded_file:
     if conf > 0.85:
         speak(label)
 
-    # -------------------------
+    # -----------------------------
     # DASHBOARD
-    # -------------------------
+    # -----------------------------
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -240,8 +247,8 @@ if uploaded_file:
 
         st.write(f"🔢 Class Index: {idx}")
         st.write(f"📊 Confidence: {conf:.2f}")
-
         st.progress(float(conf))
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
