@@ -1,5 +1,6 @@
 streamlit
 opencv-python
 mediapipe
-tensorflow
 numpy
+pyttsx3
+tensorflow
