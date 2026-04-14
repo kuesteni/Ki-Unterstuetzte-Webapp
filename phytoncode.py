@@ -49,7 +49,7 @@ TEXT = {
 T = TEXT[lang]
 
 # -----------------------------
-# UI STYLE (FANCY)
+# UI STYLE
 # -----------------------------
 st.markdown("""
 <style>
@@ -74,17 +74,11 @@ st.markdown("""
     font-size: 28px;
     font-weight: bold;
 }
-
-.lang-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-}
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# HEADER + LANGUAGE BUTTON
+# HEADER
 # -----------------------------
 colL, colR = st.columns([6,1])
 
@@ -104,6 +98,14 @@ def load_model():
 model = load_model()
 
 # -----------------------------
+# CLASSES (WICHTIG FIX)
+# -----------------------------
+CLASSES = [
+    "0","1","2","3","4","5","6","7","8","9",
+    "A","B","C","L","V","O","I","Y","U","F"
+]
+
+# -----------------------------
 # MEDIA PIPE
 # -----------------------------
 mp_hands = mp.solutions.hands
@@ -119,6 +121,7 @@ hands = mp_hands.Hands(
 # PREPROCESS
 # -----------------------------
 IMG_SIZE = 224
+
 def preprocess(img):
     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
@@ -167,17 +170,19 @@ if uploaded_file:
         model_a = "🔴 " + T["nohand"]
 
     # -------------------------
-    # MODEL B
+    # MODEL B (FIXED OUTPUT)
     # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
+
     idx = np.argmax(preds)
     conf = preds[idx]
 
-    label = str(idx)
+    label = CLASSES[idx]   # ✅ FIX: echte Klasse statt nur Zahl
 
-    final = label if conf > 0.85 else "..."
+    # Final output
+    final = f"{label} ({idx})" if conf > 0.85 else "Uncertain"
 
-    # speak
+    # speech
     if conf > 0.85:
         speak(label)
 
@@ -196,8 +201,11 @@ if uploaded_file:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟣 {T['modelB']}")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
+
+        st.write(f"🔢 Index: {idx}")
+        st.write(f"📊 Confidence: {conf:.2f}")
+
         st.progress(float(conf))
-        st.write(f"{conf:.2f}")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
