@@ -3,8 +3,10 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import tensorflow as tf
-import pyttsx3
 from collections import deque, Counter
+from gtts import gTTS
+import base64
+import time
 
 # -----------------------------
 # PAGE CONFIG
@@ -12,7 +14,7 @@ from collections import deque, Counter
 st.set_page_config(page_title="AI Hand Dashboard", layout="wide")
 
 # -----------------------------
-# DASHBOARD CSS
+# UI STYLE
 # -----------------------------
 st.markdown("""
 <style>
@@ -34,12 +36,6 @@ st.markdown("""
 .metric {
     font-size: 26px;
     font-weight: bold;
-    color: #ffffff;
-}
-
-.sub {
-    font-size: 14px;
-    color: #aaa;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -57,12 +53,23 @@ CLASSES = [
 ]
 
 # -----------------------------
-# TTS
+# SPEECH (CLOUD SAFE)
 # -----------------------------
-engine = pyttsx3.init()
-def speak(text):
-    engine.say(text)
-    engine.runAndWait()
+def speak(text, lang="en"):
+    tts = gTTS(text=text, lang=lang)
+    tts.save("speech.mp3")
+
+    audio_file = open("speech.mp3", "rb")
+    audio_bytes = audio_file.read()
+
+    b64 = base64.b64encode(audio_bytes).decode()
+
+    audio_html = f"""
+    <audio autoplay>
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+    </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
 
 # -----------------------------
 # MODEL B (Teachable Machine)
@@ -91,17 +98,17 @@ def preprocess(frame):
 # -----------------------------
 # TITLE
 # -----------------------------
-st.markdown('<div class="big-title">🤖 AI Hand Gesture Comparison Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-title">🤖 AI Hand Comparison Dashboard</div>', unsafe_allow_html=True)
 
-run = st.checkbox("🚀 Start System")
+run = st.checkbox("🚀 Start Camera")
 
-frame_slot = st.image([])
+frame_placeholder = st.image([])
 
 # -----------------------------
 # STATE
 # -----------------------------
 buffer = deque(maxlen=FRAME_STABILITY)
-history = deque(maxlen=8)
+history = deque(maxlen=10)
 
 word = ""
 last = ""
@@ -157,16 +164,22 @@ while run:
             last = stable
             history.append(stable)
 
+            # DELETE
             if stable == "F":
                 word = word[:-1]
+
+            # RESET
             elif stable == "Y":
                 word = ""
+
             else:
                 word += stable
-                speak(stable)
+
+                # 🔊 SOUND (CLOUD SAFE)
+                speak(stable, "en")
 
     # -------------------------
-    # DASHBOARD ROW 1 (METRICS)
+    # DASHBOARD UI
     # -------------------------
     col1, col2, col3 = st.columns(3)
 
@@ -174,7 +187,6 @@ while run:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🔵 Model A")
         st.markdown(f"<div class='metric'>{model_a_status}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='sub'>MediaPipe Hand Tracking</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -182,33 +194,19 @@ while run:
         st.markdown("### 🟣 Model B")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
         st.progress(float(conf))
-        st.markdown(f"<div class='sub'>Confidence: {conf:.2f}</div>", unsafe_allow_html=True)
+        st.markdown(f"Confidence: {conf:.2f}")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 🟢 Final Word")
+        st.markdown("### 🟢 Word")
         st.markdown(f"<div class='metric'>{word}</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # -------------------------
-    # ROW 2 (HISTORY + COMPARISON)
+    # HISTORY
     # -------------------------
-    col4, col5 = st.columns(2)
-
-    with col4:
-        st.markdown("### 📜 History")
-        st.write(" ".join(history))
-
-    with col5:
-        st.markdown("### ⚖️ Comparison")
-
-        if model_a_status == "🟢 Hand Detected" and conf > CONF_THRESHOLD:
-            st.success("Both models active → comparing results")
-        elif conf > CONF_THRESHOLD:
-            st.info("Model B active only")
-        else:
-            st.warning("No stable prediction")
+    st.write("📜 History:", " ".join(history))
 
     # -------------------------
     # FRAME
@@ -219,6 +217,6 @@ while run:
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1,(0,255,0),2)
 
-    frame_slot.image(frame, channels="BGR")
+    frame_placeholder.image(frame, channels="BGR")
 
 cap.release()
