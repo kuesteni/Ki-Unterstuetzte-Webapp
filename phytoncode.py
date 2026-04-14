@@ -6,7 +6,7 @@ import tensorflow as tf
 from collections import deque, Counter
 from gtts import gTTS
 import base64
-import time
+import os
 
 # -----------------------------
 # PAGE CONFIG
@@ -14,7 +14,7 @@ import time
 st.set_page_config(page_title="AI Hand Dashboard", layout="wide")
 
 # -----------------------------
-# UI STYLE
+# UI DESIGN
 # -----------------------------
 st.markdown("""
 <style>
@@ -55,12 +55,12 @@ CLASSES = [
 # -----------------------------
 # SPEECH (CLOUD SAFE)
 # -----------------------------
-def speak(text, lang="en"):
-    tts = gTTS(text=text, lang=lang)
+def speak(text):
+    tts = gTTS(text=text, lang="en")
     tts.save("speech.mp3")
 
-    audio_file = open("speech.mp3", "rb")
-    audio_bytes = audio_file.read()
+    with open("speech.mp3", "rb") as f:
+        audio_bytes = f.read()
 
     b64 = base64.b64encode(audio_bytes).decode()
 
@@ -72,16 +72,16 @@ def speak(text, lang="en"):
     st.markdown(audio_html, unsafe_allow_html=True)
 
 # -----------------------------
-# MODEL B (Teachable Machine)
+# LOAD MODEL B (Teachable Machine)
 # -----------------------------
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("model.h5")
+    return tf.keras.models.load_model("keras_model.h5")
 
 model = load_model()
 
 # -----------------------------
-# MEDIA PIPE (Model A)
+# MEDIA PIPE (MODEL A)
 # -----------------------------
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
@@ -175,8 +175,8 @@ while run:
             else:
                 word += stable
 
-                # 🔊 SOUND (CLOUD SAFE)
-                speak(stable, "en")
+                # 🔊 SOUND
+                speak(stable)
 
     # -------------------------
     # DASHBOARD UI
