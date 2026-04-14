@@ -1,161 +1,160 @@
 import streamlit as st
 import cv2
-import mediapipe as mp
 import numpy as np
-from tensorflow.keras.models import load_model
+import mediapipe as mp
 import time
+from collections import deque, Counter
+import pyttsx3
+import tensorflow as tf
 
-# =========================
+# -----------------------------
 # CONFIG
-# =========================
-MODEL_PATH = "model/keras_model.h5"
-LABELS_PATH = "model/labels.txt"
+# -----------------------------
+CONFIDENCE_THRESHOLD = 0.85
+STABILITY_FRAMES = 10
 
-CONFIDENCE_THRESHOLD = 0.9
-COOLDOWN_TIME = 1.5  # Sekunden zwischen Zeichen
+# Klassen (Teachable Machine Reihenfolge!)
+CLASSES = [
+    "0","1","2","3","4","5","6","7","8","9",
+    "A","B","C","L","V","O","I","Y","U","F"
+]
 
-# =========================
-# MODEL LADEN
-# =========================
+# -----------------------------
+# TTS Setup
+# -----------------------------
+engine = pyttsx3.init()
+
+def speak(text, lang="en"):
+    engine.say(text)
+    engine.runAndWait()
+
+# -----------------------------
+# Load Model (Teachable Machine)
+# -----------------------------
 @st.cache_resource
-def load_model_and_labels():
-    model = load_model(MODEL_PATH)
+def load_model():
+    return tf.keras.models.load_model("model.h5")
 
-    with open(LABELS_PATH, "r") as f:
-        labels = [line.strip() for line in f.readlines()]
+model = load_model()
 
-    return model, labels
-
-model, labels = load_model_and_labels()
-
-# =========================
-# MEDIAPIPE
-# =========================
+# -----------------------------
+# MediaPipe Setup
+# -----------------------------
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
+    min_detection_confidence=0.7
 )
 
-# =========================
-# SESSION STATE
-# =========================
-if "sentence" not in st.session_state:
-    st.session_state.sentence = ""
-
-if "last_time" not in st.session_state:
-    st.session_state.last_time = 0
-
-# =========================
-# FUNKTIONEN
-# =========================
-def predict(frame):
-    img = cv2.resize(frame, (224, 224))
-    img = img.astype(np.float32) / 255.0
-    img = np.expand_dims(img, axis=0)
-
-    prediction = model.predict(img, verbose=0)
-    index = np.argmax(prediction)
-    confidence = float(prediction[0][index])
-
-    # FIX: richtiges Label aus "10 A"
-    parts = labels[index].split(" ")
-    label = parts[1] if len(parts) > 1 else parts[0]
-
-    return label, confidence
-
-
-def count_fingers(hand_landmarks):
-    tips = [4, 8, 12, 16, 20]
-    fingers = []
-
-    # Daumen
-    if hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x:
-        fingers.append(1)
-    else:
-        fingers.append(0)
-
-    # andere Finger
-    for tip in tips[1:]:
-        if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
-            fingers.append(1)
-        else:
-            fingers.append(0)
-
-    return sum(fingers)
-
-# =========================
+# -----------------------------
 # UI
-# =========================
-st.title("✋ KI Handzeichen Übersetzer")
-st.write("MediaPipe + Teachable Machine Echtzeit-Erkennung")
+# -----------------------------
+st.title("🤖 Handzeichen Übersetzer")
 
-run = st.checkbox("Kamera starten")
-
-frame_placeholder = st.image([])
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Säule A (Handtracking)")
-    mp_out = st.empty()
+# Sprache umschalten
+col1, col2 = st.columns([10,1])
 
 with col2:
-    st.subheader("Säule B (KI Modell)")
-    tm_out = st.empty()
+    lang = st.radio("🌐", ["EN", "DE"])
 
-st.subheader("📝 Ergebnis")
-text_out = st.empty()
+st.markdown("### Live Kamera")
 
-if st.button("Text löschen"):
-    st.session_state.sentence = ""
+run = st.checkbox("Start Kamera")
 
+FRAME_WINDOW = st.image([])
+
+# -----------------------------
+# STATE
+# -----------------------------
+prediction_buffer = deque(maxlen=STABILITY_FRAMES)
+current_word = ""
+last_output = ""
+last_time = time.time()
+
+# -----------------------------
 # Kamera
+# -----------------------------
 cap = cv2.VideoCapture(0)
 
-# =========================
-# LOOP
-# =========================
+def preprocess_landmarks(hand_landmarks):
+    data = []
+    for lm in hand_landmarks.landmark:
+        data.extend([lm.x, lm.y, lm.z])
+    return np.array(data).reshape(1, -1)
+
+# -----------------------------
+# MAIN LOOP
+# -----------------------------
 while run:
     ret, frame = cap.read()
     if not ret:
-        st.error("Keine Kamera gefunden")
         break
 
     frame = cv2.flip(frame, 1)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    results = hands.process(rgb)
+    result = hands.process(rgb)
 
-    # ===== Säule A =====
-    finger_text = "Keine Hand"
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
+    prediction = None
+    confidence = 0
+
+    if result.multi_hand_landmarks:
+        for hand_landmarks in result.multi_hand_landmarks:
+
+            # Zeichne Punkte
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-            fingers = count_fingers(hand_landmarks)
-            finger_text = f"{fingers} Finger erkannt"
 
-    # ===== Säule B =====
-    label, confidence = predict(frame)
+            # Feature Extraction
+            input_data = preprocess_landmarks(hand_landmarks)
 
-    now = time.time()
+            # ML Prediction
+            preds = model.predict(input_data, verbose=0)[0]
+            idx = np.argmax(preds)
+            confidence = preds[idx]
 
-    if confidence > CONFIDENCE_THRESHOLD:
-        tm_out.markdown(f"**{label} ({confidence:.2f})**")
+            if confidence > CONFIDENCE_THRESHOLD:
+                prediction = CLASSES[idx]
+                prediction_buffer.append(prediction)
 
-        if now - st.session_state.last_time > COOLDOWN_TIME:
-            st.session_state.sentence += label
-            st.session_state.last_time = now
-    else:
-        tm_out.markdown("Unsicher...")
+    # -----------------------------
+    # Stabilisierung
+    # -----------------------------
+    if len(prediction_buffer) == STABILITY_FRAMES:
+        most_common = Counter(prediction_buffer).most_common(1)[0][0]
 
-    # ===== OUTPUT =====
-    mp_out.markdown(f"**{finger_text}**")
-    text_out.markdown(f"### {st.session_state.sentence}")
+        if most_common != last_output:
+            last_output = most_common
 
-    frame_placeholder.image(frame, channels="BGR")
+            # DELETE Geste (z. B. "F")
+            if most_common == "F":
+                current_word = current_word[:-1]
+
+            else:
+                current_word += most_common
+
+                # Sound
+                if lang == "DE":
+                    speak(most_common, "de")
+                else:
+                    speak(most_common, "en")
+
+    # -----------------------------
+    # Anzeige
+    # -----------------------------
+    if prediction and confidence > CONFIDENCE_THRESHOLD:
+        cv2.putText(frame, f"{prediction} ({confidence:.2f})",
+                    (10, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1, (0,255,0), 2)
+
+    # Wort anzeigen
+    cv2.putText(frame, f"Word: {current_word}",
+                (10, 100),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1, (255,0,0), 2)
+
+    FRAME_WINDOW.image(frame, channels="BGR")
 
 cap.release()
