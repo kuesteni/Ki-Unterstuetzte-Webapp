@@ -98,12 +98,30 @@ def load_model():
 model = load_model()
 
 # -----------------------------
-# CLASSES (WICHTIG FIX)
+# 🔥 20-KLASSEN MAPPING (FIX)
 # -----------------------------
-CLASSES = [
-    "0","1","2","3","4","5","6","7","8","9",
-    "A","B","C","L","V","O","I","Y","U","F"
-]
+CLASS_MAP = {
+    0: "0",
+    1: "1",
+    2: "2",
+    3: "3",
+    4: "4",
+    5: "5",
+    6: "6",
+    7: "7",
+    8: "8",
+    9: "9",
+    10: "A",
+    11: "B",
+    12: "C",
+    13: "L",
+    14: "V",
+    15: "O",
+    16: "I",
+    17: "Y",
+    18: "U",
+    19: "F"
+}
 
 # -----------------------------
 # MEDIA PIPE
@@ -170,17 +188,17 @@ if uploaded_file:
         model_a = "🔴 " + T["nohand"]
 
     # -------------------------
-    # MODEL B (FIXED OUTPUT)
+    # MODEL B (20 CLASSES FIX)
     # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
 
-    idx = np.argmax(preds)
-    conf = preds[idx]
+    idx = int(np.argmax(preds))
+    conf = float(preds[idx])
 
-    label = CLASSES[idx]   # ✅ FIX: echte Klasse statt nur Zahl
+    label = CLASS_MAP.get(idx, "Unknown")
 
-    # Final output
-    final = f"{label} ({idx})" if conf > 0.85 else "Uncertain"
+    # FINAL OUTPUT
+    final = f"{label} | Class {idx} | {conf:.2f}" if conf > 0.85 else "Uncertain"
 
     # speech
     if conf > 0.85:
@@ -200,9 +218,9 @@ if uploaded_file:
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟣 {T['modelB']}")
-        st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'>🧠 {label}</div>", unsafe_allow_html=True)
 
-        st.write(f"🔢 Index: {idx}")
+        st.write(f"🔢 Class Index: {idx}")
         st.write(f"📊 Confidence: {conf:.2f}")
 
         st.progress(float(conf))
