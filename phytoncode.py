@@ -1,6 +1,8 @@
 import streamlit as st
 import numpy as np
 import cv2
+import os
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
 import mediapipe as mp
 import tensorflow as tf
 from gtts import gTTS
