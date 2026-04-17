@@ -78,15 +78,6 @@ st.markdown("""
     text-align: center;
     margin-top: 10px;
 }
-.subtext {
-    opacity: 0.7;
-    font-size: 13px;
-    text-align: center;
-}
-img.rounded {
-    border-radius: 18px;
-    box-shadow: 0 6px 25px rgba(0,0,0,0.25);
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -144,9 +135,7 @@ def model_a_feature_vector(lm):
     ring_mcp   = lm[13]
     pinky_mcp  = lm[17]
 
-    palm_size        = dist(wrist, middle_mcp)
-    spread           = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
-    thumb_index_dist = dist(thumb_tip, index_tip)
+    palm_size = dist(wrist, middle_mcp)
 
     index_up  = index_tip.y  < lm[6].y
     middle_up = middle_tip.y < lm[10].y
@@ -162,30 +151,12 @@ def model_a_feature_vector(lm):
     if fingers == (0,1,1,1,0): return "3"
     if fingers == (0,1,1,1,1): return "4"
     if fingers == (1,1,1,1,1): return "5"
-    if thumb_up and index_up and not middle_up and not ring_up: return "6"
-    if thumb_up and index_up and middle_up and not ring_up: return "7"
-    if index_up and middle_up and ring_up and pinky_up and spread > 1.4: return "8"
-    if index_up and middle_up and ring_up and pinky_up and thumb_up: return "9"
-    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up: return "A"
-    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]): return "B"
-    if thumb_index_dist > palm_size * 0.6 and spread < 1.2: return "C"
-    if thumb_up and index_up: return "L"
-    if index_up and middle_up and not ring_up: return "V"
-    if pinky_up: return "I"
 
     return str(sum(fingers))
 
 # -----------------------------
 # HELPERS
 # -----------------------------
-def draw_prediction_label(img, text):
-    img_copy = img.copy()
-    cv2.rectangle(img_copy, (10, 10), (300, 80), (0, 0, 0), -1)
-    cv2.putText(img_copy, text, (20, 55),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                (0, 255, 255), 3, cv2.LINE_AA)
-    return img_copy
-
 def create_symbol_image(symbol):
     canvas = np.zeros((300, 300, 3), dtype=np.uint8)
     cv2.putText(canvas, str(symbol),
@@ -197,9 +168,6 @@ def create_symbol_image(symbol):
                 cv2.LINE_AA)
     return canvas
 
-# -----------------------------
-# PREPROCESS
-# -----------------------------
 IMG_SIZE = 224
 
 def preprocess(img):
@@ -207,14 +175,11 @@ def preprocess(img):
     img = img / 255.0
     return np.expand_dims(img, axis=0)
 
-# -----------------------------
-# SPEECH
-# -----------------------------
 def speak(text):
     tts = gTTS(text=text, lang="en")
     tts.save("speech.mp3")
     audio = open("speech.mp3", "rb").read()
-    b64   = base64.b64encode(audio).decode()
+    b64 = base64.b64encode(audio).decode()
     st.markdown(f"""
     <audio autoplay>
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
@@ -222,17 +187,15 @@ def speak(text):
     """, unsafe_allow_html=True)
 
 # -----------------------------
-# UPLOAD (UPDATED PART INTEGRATED)
+# UPLOAD
 # -----------------------------
 uploaded_file = st.file_uploader(T["upload"], type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
-
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # separate copies
     img_a = img.copy()
     img_b = img.copy()
 
@@ -245,7 +208,7 @@ if uploaded_file:
             mp_draw.draw_landmarks(img_a, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
-    # ---------------- MODEL B (NO LANDMARKS) ----------------
+    # ---------------- MODEL B (NO OVERLAY ANYMORE) ----------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
     idx = int(np.argmax(preds))
     conf = float(preds[idx])
@@ -256,10 +219,8 @@ if uploaded_file:
     if conf > 0.85:
         speak(label)
 
-    annotated_img = cv2.cvtColor(
-        draw_prediction_label(img_b, f"{label} ({conf:.2f})"),
-        cv2.COLOR_BGR2RGB
-    )
+    # ❗ NO BLACK OVERLAY HERE ANYMORE
+    model_b_img = cv2.cvtColor(img_b, cv2.COLOR_BGR2RGB)
 
     symbol_img = create_symbol_image(label if conf > 0.85 else "?")
 
@@ -270,22 +231,21 @@ if uploaded_file:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🔵 {T['modelA']}")
         st.markdown(f"<div class='metric'>{model_a_label}</div>", unsafe_allow_html=True)
-
-        # IMAGE UNDER MODEL A
         st.image(cv2.cvtColor(img_a, cv2.COLOR_BGR2RGB),
                  caption="Model A Output",
                  use_column_width=True)
-
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟣 {T['modelB']}")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
-        st.write(f"Index: {idx}")
         st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
-        st.image(annotated_img, caption="Model B Result", use_column_width=True)
+
+        # NO OVERLAY IMAGE ANYMORE
+        st.image(model_b_img, caption="Model B Result (clean)", use_column_width=True)
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
