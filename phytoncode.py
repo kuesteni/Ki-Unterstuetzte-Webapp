@@ -300,4 +300,5 @@ if uploaded_file:
         st.image(symbol_img, caption="AI Symbol View", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.image(img, caption="Original Input", use_container_width=True)
+    # Original-Bild auch konvertieren
+    st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Original Input", use_container_width=True)
