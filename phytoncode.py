@@ -7,6 +7,7 @@ import mediapipe as mp
 import tensorflow as tf
 from gtts import gTTS
 import base64
+import math
 
 # -----------------------------
 # PAGE CONFIG
@@ -28,7 +29,7 @@ TEXT = {
     "EN": {
         "title": "🤖 AI Hand Recognition System",
         "upload": "Upload Image",
-        "modelA": "Model A (Heuristic AI)",
+        "modelA": "Model A (Feature AI)",
         "modelB": "Model B (Neural Network)",
         "final": "Final Result",
         "nohand": "No Hand Detected",
@@ -36,7 +37,7 @@ TEXT = {
     "DE": {
         "title": "🤖 KI Hand Erkennungssystem",
         "upload": "Bild hochladen",
-        "modelA": "Modell A (Heuristik KI)",
+        "modelA": "Modell A (Feature KI)",
         "modelB": "Modell B (Neuronales Netz)",
         "final": "Endergebnis",
         "nohand": "Keine Hand erkannt",
@@ -81,7 +82,7 @@ with colR:
     st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
 
 # -----------------------------
-# MODEL B
+# MODEL B (TensorFlow)
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -89,9 +90,6 @@ def load_model():
 
 model = load_model()
 
-# -----------------------------
-# LABELS (SAFE LOADER)
-# -----------------------------
 def load_labels():
     with open("labels.txt", "r") as f:
         return [line.strip() for line in f.readlines()]
@@ -111,30 +109,69 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# HEURISTIC MODEL A
+# MODEL A (FEATURE-BASED - 20 CLASSES)
 # -----------------------------
-def get_fingers(lm):
-    return [
-        1 if lm[4].x < lm[3].x else 0,
-        1 if lm[8].y < lm[6].y else 0,
-        1 if lm[12].y < lm[10].y else 0,
-        1 if lm[16].y < lm[14].y else 0,
-        1 if lm[20].y < lm[18].y else 0
-    ]
+def model_a_feature_vector(lm):
+    def dist(a, b):
+        return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-def heuristic_label(f):
-    mapping = {
-        (0,0,0,0,0): "Fist",
-        (1,1,1,1,1): "Open Hand",
-        (0,1,0,0,0): "1",
-        (0,1,1,0,0): "2",
-        (0,1,1,1,0): "3",
-        (0,1,1,1,1): "4",
-        (1,1,0,0,0): "L",
-        (1,0,0,0,1): "Y",
-        (0,0,1,0,0): "I",
-    }
-    return mapping.get(tuple(f), f"Unknown {f}")
+    thumb = 1 if lm[4].x < lm[3].x else 0
+    index = 1 if lm[8].y < lm[6].y else 0
+    middle = 1 if lm[12].y < lm[10].y else 0
+    ring = 1 if lm[16].y < lm[14].y else 0
+    pinky = 1 if lm[20].y < lm[18].y else 0
+
+    fingers = (thumb, index, middle, ring, pinky)
+
+    palm_size = dist(lm[0], lm[9])
+    spread = dist(lm[5], lm[17]) / (palm_size + 1e-6)
+
+    index_thumb = dist(lm[4], lm[8])
+    middle_thumb = dist(lm[4], lm[12])
+
+    # ---------------- NUMBERS ----------------
+    if fingers == (0,0,0,0,0):
+        return "0"
+    if fingers == (0,1,0,0,0):
+        return "1"
+    if fingers == (0,1,1,0,0):
+        return "2"
+    if fingers == (0,1,1,1,0):
+        return "3"
+    if fingers == (0,1,1,1,1):
+        return "4"
+    if fingers == (1,1,1,1,1):
+        return "5"
+
+    # ---------------- LETTERS ----------------
+    if thumb == 1 and index == 0 and middle == 0:
+        return "A"
+
+    if fingers == (0,1,1,1,1):
+        return "B"
+
+    if index_thumb < middle_thumb and spread > 1.2:
+        return "C"
+
+    if fingers == (1,1,0,0,0):
+        return "L"
+
+    if fingers == (0,1,1,0,0):
+        return "V"
+
+    if fingers == (0,0,0,0,1):
+        return "I"
+
+    if fingers == (1,0,0,0,1):
+        return "Y"
+
+    if fingers == (0,1,1,0,0) and spread > 1.3:
+        return "U"
+
+    if index == 1 and thumb == 1:
+        return "F"
+
+    return str(sum(fingers))
 
 # -----------------------------
 # PREPROCESS
@@ -185,11 +222,10 @@ if uploaded_file:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            fingers = get_fingers(hand_landmarks.landmark)
-            model_a_label = heuristic_label(fingers)
+            model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
     # -------------------------
-    # MODEL B (FIXED LABELS)
+    # MODEL B
     # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
 
