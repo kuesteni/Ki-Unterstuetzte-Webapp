@@ -238,5 +238,6 @@ if uploaded_file:
         </div>
         """, unsafe_allow_html=True)
 
-        st.image(img_b, use_column_width=True)
+        # ❌ Bild entfernt (wie gewünscht)
+
         st.markdown('</div>', unsafe_allow_html=True)
