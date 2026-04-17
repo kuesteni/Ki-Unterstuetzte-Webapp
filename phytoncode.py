@@ -67,10 +67,6 @@ st.markdown("""
     box-shadow: 0 8px 30px rgba(0,0,0,0.25);
     backdrop-filter: blur(14px);
     border: 1px solid rgba(255,255,255,0.08);
-    transition: 0.3s;
-}
-.card:hover {
-    transform: translateY(-3px);
 }
 .metric {
     font-size: 34px;
@@ -81,13 +77,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-colL, colR = st.columns([6, 1])
-
-with colL:
-    st.markdown(f'<div class="main-title">{T["title"]}</div>', unsafe_allow_html=True)
-
-with colR:
-    st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
+st.markdown(f'<div class="main-title">{T["title"]}</div>', unsafe_allow_html=True)
 
 # -----------------------------
 # MODEL B
@@ -105,10 +95,9 @@ def load_labels():
 CLASS_NAMES = load_labels()
 
 # -----------------------------
-# MEDIA PIPE
+# MEDIA PIPE (NO DRAWING FOR MODEL B)
 # -----------------------------
 mp_hands = mp.solutions.hands
-mp_draw  = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     static_image_mode=True,
@@ -117,27 +106,26 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# MODEL A (FIXED)
+# MODEL A (FIXED "9 0 BUG")
 # -----------------------------
 def model_a_feature_vector(lm):
     def dist(a, b):
         return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-    wrist      = lm[0]
-    thumb_tip  = lm[4]
-    index_tip  = lm[8]
+    wrist = lm[0]
+    thumb_tip = lm[4]
+    index_tip = lm[8]
     middle_tip = lm[12]
-    ring_tip   = lm[16]
-    pinky_tip  = lm[20]
+    ring_tip = lm[16]
+    pinky_tip = lm[20]
 
-    index_mcp  = lm[5]
+    index_mcp = lm[5]
     middle_mcp = lm[9]
-    ring_mcp   = lm[13]
-    pinky_mcp  = lm[17]
+    ring_mcp = lm[13]
+    pinky_mcp = lm[17]
 
     palm_size = dist(wrist, middle_mcp) + 1e-6
     spread = dist(index_mcp, pinky_mcp) / palm_size
-    thumb_index_dist = dist(thumb_tip, index_tip)
 
     index_up  = index_tip.y  < lm[6].y
     middle_up = middle_tip.y < lm[10].y
@@ -147,7 +135,7 @@ def model_a_feature_vector(lm):
 
     fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
-    # ---------------- FIXED LOGIC ----------------
+    # 🔥 FIX: ONLY BOOLEAN COMPARISONS (NO 0/1 MIX)
     if fingers == (False, False, False, False, False):
         return "0"
     if fingers == (False, True, False, False, False):
@@ -161,40 +149,20 @@ def model_a_feature_vector(lm):
     if fingers == (True, True, True, True, True):
         return "5"
 
-    if thumb_up and index_up and not middle_up and not ring_up:
-        return "6"
-    if thumb_up and index_up and middle_up and not ring_up:
-        return "7"
-    if index_up and middle_up and ring_up and pinky_up and spread > 1.4:
-        return "8"
     if index_up and middle_up and ring_up and pinky_up and thumb_up:
         return "9"
 
     if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:
         return "A"
 
-    if index_up and middle_up and not ring_up:
+    if index_up and middle_up:
         return "V"
-
-    if pinky_up:
-        return "I"
-
-    if thumb_up and index_up:
-        return "L"
 
     return "Unknown"
 
 # -----------------------------
 # HELPERS
 # -----------------------------
-def draw_prediction_label(img, text):
-    img_copy = img.copy()
-    cv2.rectangle(img_copy, (10, 10), (300, 80), (0, 0, 0), -1)
-    cv2.putText(img_copy, text, (20, 55),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                (0, 255, 255), 3, cv2.LINE_AA)
-    return img_copy
-
 def create_symbol_image(symbol):
     canvas = np.zeros((300, 300, 3), dtype=np.uint8)
     cv2.putText(canvas, str(symbol),
@@ -206,9 +174,6 @@ def create_symbol_image(symbol):
                 cv2.LINE_AA)
     return canvas
 
-# -----------------------------
-# PREPROCESS
-# -----------------------------
 IMG_SIZE = 224
 
 def preprocess(img):
@@ -247,27 +212,21 @@ if uploaded_file:
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
-            mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
-    # MODEL B
+    # MODEL B (NO LANDMARK DRAWING!)
     preds = model.predict(preprocess(rgb), verbose=0)[0]
     idx = int(np.argmax(preds))
     conf = float(preds[idx])
 
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
+
     final = f"{label} ({conf:.2f})" if conf > 0.85 else "Uncertain"
 
     if conf > 0.85:
         speak(label)
 
-    annotated_img = cv2.cvtColor(
-        draw_prediction_label(img, f"{label} ({conf:.2f})"),
-        cv2.COLOR_BGR2RGB
-    )
-
     symbol_img = create_symbol_image(label if conf > 0.85 else "?")
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # UI
     col1, col2, col3 = st.columns(3)
@@ -276,7 +235,6 @@ if uploaded_file:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🔵 {T['modelA']}")
         st.markdown(f"<div class='metric'>{model_a_label}</div>", unsafe_allow_html=True)
-        st.image(img_rgb, width=160)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -286,14 +244,11 @@ if uploaded_file:
         st.write(f"Index: {idx}")
         st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
-        st.image(annotated_img, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟢 {T['final']}")
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
-        st.image(symbol_img, caption="AI Symbol View", use_column_width=True)
+        st.image(symbol_img, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
-    st.image(img_rgb, caption="Original Input", use_column_width=True)
