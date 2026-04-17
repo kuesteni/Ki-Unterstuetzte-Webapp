@@ -3,6 +3,6 @@ numpy
 tensorflow==2.15.0
 mediapipe==0.10.9
 opencv-python-headless
-gtts
+gTTs
 protobuf==3.20.3
 Pillow
