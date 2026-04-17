@@ -67,6 +67,10 @@ st.markdown("""
     box-shadow: 0 8px 30px rgba(0,0,0,0.25);
     backdrop-filter: blur(14px);
     border: 1px solid rgba(255,255,255,0.08);
+    transition: 0.3s;
+}
+.card:hover {
+    transform: translateY(-3px);
 }
 .metric {
     font-size: 34px;
@@ -74,13 +78,28 @@ st.markdown("""
     text-align: center;
     margin-top: 10px;
 }
+.subtext {
+    opacity: 0.7;
+    font-size: 13px;
+    text-align: center;
+}
+img.rounded {
+    border-radius: 18px;
+    box-shadow: 0 6px 25px rgba(0,0,0,0.25);
+}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown(f'<div class="main-title">{T["title"]}</div>', unsafe_allow_html=True)
+colL, colR = st.columns([6, 1])
+
+with colL:
+    st.markdown(f'<div class="main-title">{T["title"]}</div>', unsafe_allow_html=True)
+
+with colR:
+    st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
 
 # -----------------------------
-# MODEL B
+# MODEL B (TensorFlow)
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -95,9 +114,10 @@ def load_labels():
 CLASS_NAMES = load_labels()
 
 # -----------------------------
-# MEDIA PIPE (NO DRAWING FOR MODEL B)
+# MEDIA PIPE
 # -----------------------------
 mp_hands = mp.solutions.hands
+mp_draw  = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     static_image_mode=True,
@@ -106,26 +126,26 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# MODEL A (FIXED "9 0 BUG")
+# MODEL A
 # -----------------------------
 def model_a_feature_vector(lm):
     def dist(a, b):
         return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-    wrist = lm[0]
-    thumb_tip = lm[4]
-    index_tip = lm[8]
+    wrist      = lm[0]
+    thumb_tip  = lm[4]
+    index_tip  = lm[8]
     middle_tip = lm[12]
-    ring_tip = lm[16]
-    pinky_tip = lm[20]
-
-    index_mcp = lm[5]
+    ring_tip   = lm[16]
+    pinky_tip  = lm[20]
+    index_mcp  = lm[5]
     middle_mcp = lm[9]
-    ring_mcp = lm[13]
-    pinky_mcp = lm[17]
+    ring_mcp   = lm[13]
+    pinky_mcp  = lm[17]
 
-    palm_size = dist(wrist, middle_mcp) + 1e-6
-    spread = dist(index_mcp, pinky_mcp) / palm_size
+    palm_size        = dist(wrist, middle_mcp)
+    spread           = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
+    thumb_index_dist = dist(thumb_tip, index_tip)
 
     index_up  = index_tip.y  < lm[6].y
     middle_up = middle_tip.y < lm[10].y
@@ -135,34 +155,39 @@ def model_a_feature_vector(lm):
 
     fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
-    # 🔥 FIX: ONLY BOOLEAN COMPARISONS (NO 0/1 MIX)
-    if fingers == (False, False, False, False, False):
-        return "0"
-    if fingers == (False, True, False, False, False):
-        return "1"
-    if fingers == (False, True, True, False, False):
-        return "2"
-    if fingers == (False, True, True, True, False):
-        return "3"
-    if fingers == (False, True, True, True, True):
-        return "4"
-    if fingers == (True, True, True, True, True):
-        return "5"
+    if not any(fingers):                                                   return "0"
+    if fingers == (0,1,0,0,0):                                            return "1"
+    if fingers == (0,1,1,0,0):                                            return "2"
+    if fingers == (0,1,1,1,0):                                            return "3"
+    if fingers == (0,1,1,1,1):                                            return "4"
+    if fingers == (1,1,1,1,1):                                            return "5"
+    if thumb_up and index_up and not middle_up and not ring_up:           return "6"
+    if thumb_up and index_up and middle_up and not ring_up:               return "7"
+    if index_up and middle_up and ring_up and pinky_up and spread > 1.4:  return "8"
+    if index_up and middle_up and ring_up and pinky_up and thumb_up:      return "9"
+    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:   return "A"
+    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]):   return "B"
+    if thumb_index_dist > palm_size * 0.6 and spread < 1.2:              return "C"
+    if thumb_up and index_up:                                             return "L"
+    if index_up and middle_up and not ring_up:                            return "V"
+    if pinky_up:                                                          return "I"
+    if thumb_up and pinky_up:                                             return "Y"
+    if index_up and middle_up and spread < 1.1:                           return "U"
+    if thumb_index_dist < palm_size * 0.3:                                return "F"
 
-    if index_up and middle_up and ring_up and pinky_up and thumb_up:
-        return "9"
-
-    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:
-        return "A"
-
-    if index_up and middle_up:
-        return "V"
-
-    return "Unknown"
+    return str(sum(fingers))
 
 # -----------------------------
-# HELPERS
+# HILFSFUNKTIONEN
 # -----------------------------
+def draw_prediction_label(img, text):
+    img_copy = img.copy()
+    cv2.rectangle(img_copy, (10, 10), (300, 80), (0, 0, 0), -1)
+    cv2.putText(img_copy, text, (20, 55),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                (0, 255, 255), 3, cv2.LINE_AA)
+    return img_copy
+
 def create_symbol_image(symbol):
     canvas = np.zeros((300, 300, 3), dtype=np.uint8)
     cv2.putText(canvas, str(symbol),
@@ -174,6 +199,9 @@ def create_symbol_image(symbol):
                 cv2.LINE_AA)
     return canvas
 
+# -----------------------------
+# PREPROCESS
+# -----------------------------
 IMG_SIZE = 224
 
 def preprocess(img):
@@ -188,8 +216,7 @@ def speak(text):
     tts = gTTS(text=text, lang="en")
     tts.save("speech.mp3")
     audio = open("speech.mp3", "rb").read()
-    b64 = base64.b64encode(audio).decode()
-
+    b64   = base64.b64encode(audio).decode()
     st.markdown(f"""
     <audio autoplay>
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
@@ -203,30 +230,35 @@ uploaded_file = st.file_uploader(T["upload"], type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, 1)
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img        = cv2.imdecode(file_bytes, 1)
+    rgb        = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # MODEL A
-    result = hands.process(rgb)
+    result        = hands.process(rgb)
     model_a_label = T["nohand"]
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
+            mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
-    # MODEL B (NO LANDMARK DRAWING!)
+    # MODEL B
     preds = model.predict(preprocess(rgb), verbose=0)[0]
-    idx = int(np.argmax(preds))
-    conf = float(preds[idx])
-
+    idx   = int(np.argmax(preds))
+    conf  = float(preds[idx])
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
-
     final = f"{label} ({conf:.2f})" if conf > 0.85 else "Uncertain"
 
     if conf > 0.85:
         speak(label)
 
+    # BILDER VORBEREITEN (BGR → RGB)
+    annotated_img = cv2.cvtColor(
+        draw_prediction_label(img, f"{label} ({conf:.2f})"),
+        cv2.COLOR_BGR2RGB
+    )
     symbol_img = create_symbol_image(label if conf > 0.85 else "?")
+    img_rgb    = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # UI
     col1, col2, col3 = st.columns(3)
@@ -244,11 +276,14 @@ if uploaded_file:
         st.write(f"Index: {idx}")
         st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
+        st.image(annotated_img, caption="Model B Result", use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟢 {T['final']}")
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
-        st.image(symbol_img, use_column_width=True)
+        st.image(symbol_img, caption="AI Symbol View", use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
+
+    st.image(img_rgb, caption="Original Input", use_column_width=True)
