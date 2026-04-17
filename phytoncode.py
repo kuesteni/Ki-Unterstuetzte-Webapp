@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import os
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+
 import mediapipe as mp
 import tensorflow as tf
 from gtts import gTTS
@@ -47,7 +48,7 @@ TEXT = {
 T = TEXT[lang]
 
 # -----------------------------
-# UI – ERWEITERTES CSS
+# UI STYLE (FANCY)
 # -----------------------------
 st.markdown("""
 <style>
@@ -60,6 +61,7 @@ st.markdown("""
     -webkit-text-fill-color: transparent;
     margin-bottom: 20px;
 }
+
 .card {
     background: rgba(255,255,255,0.07);
     border-radius: 20px;
@@ -69,23 +71,16 @@ st.markdown("""
     border: 1px solid rgba(255,255,255,0.08);
     transition: 0.3s;
 }
+
 .card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-4px);
 }
+
 .metric {
     font-size: 34px;
     font-weight: 800;
     text-align: center;
     margin-top: 10px;
-}
-.subtext {
-    opacity: 0.7;
-    font-size: 13px;
-    text-align: center;
-}
-img.rounded {
-    border-radius: 18px;
-    box-shadow: 0 6px 25px rgba(0,0,0,0.25);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -99,7 +94,7 @@ with colR:
     st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
 
 # -----------------------------
-# MODEL B (TensorFlow)
+# MODEL B
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -126,87 +121,62 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# MODEL A (ADVANCED FEATURE + ANGLES + DISTANCES)
+# MODEL A
 # -----------------------------
 def model_a_feature_vector(lm):
+
     def dist(a, b):
         return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-    def angle(a, b, c):
-        ab = np.array([a.x - b.x, a.y - b.y])
-        cb = np.array([c.x - b.x, c.y - b.y])
-        cosine = np.dot(ab, cb) / (np.linalg.norm(ab) * np.linalg.norm(cb) + 1e-6)
-        return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+    wrist = lm[0]
 
-    wrist      = lm[0]
-    thumb_tip  = lm[4]
-    index_tip  = lm[8]
+    thumb_tip = lm[4]
+    index_tip = lm[8]
     middle_tip = lm[12]
-    ring_tip   = lm[16]
-    pinky_tip  = lm[20]
-    index_mcp  = lm[5]
-    middle_mcp = lm[9]
-    ring_mcp   = lm[13]
-    pinky_mcp  = lm[17]
+    ring_tip = lm[16]
+    pinky_tip = lm[20]
 
-    palm_size       = dist(wrist, middle_mcp)
-    spread          = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
+    index_mcp = lm[5]
+    middle_mcp = lm[9]
+    ring_mcp = lm[13]
+    pinky_mcp = lm[17]
+
+    palm_size = dist(wrist, middle_mcp)
+    spread = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
+
     thumb_index_dist = dist(thumb_tip, index_tip)
 
-    index_up  = index_tip.y  < lm[6].y
+    index_up = index_tip.y < lm[6].y
     middle_up = middle_tip.y < lm[10].y
-    ring_up   = ring_tip.y   < lm[14].y
-    pinky_up  = pinky_tip.y  < lm[18].y
-    thumb_up  = thumb_tip.x  < lm[3].x
+    ring_up = ring_tip.y < lm[14].y
+    pinky_up = pinky_tip.y < lm[18].y
+    thumb_up = thumb_tip.x < lm[3].x
 
     fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
-    # NUMBERS
-    if not any(fingers):                                                  return "0"
-    if fingers == (0,1,0,0,0):                                           return "1"
-    if fingers == (0,1,1,0,0):                                           return "2"
-    if fingers == (0,1,1,1,0):                                           return "3"
-    if fingers == (0,1,1,1,1):                                           return "4"
-    if fingers == (1,1,1,1,1):                                           return "5"
-    if thumb_up and index_up and not middle_up and not ring_up:          return "6"
-    if thumb_up and index_up and middle_up and not ring_up:              return "7"
-    if index_up and middle_up and ring_up and pinky_up and spread > 1.4: return "8"
-    if index_up and middle_up and ring_up and pinky_up and thumb_up:     return "9"
+    if not any(fingers):
+        return "0"
+    if fingers == (0,1,0,0,0):
+        return "1"
+    if fingers == (0,1,1,0,0):
+        return "2"
+    if fingers == (0,1,1,1,0):
+        return "3"
+    if fingers == (0,1,1,1,1):
+        return "4"
+    if fingers == (1,1,1,1,1):
+        return "5"
 
-    # LETTERS
-    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:  return "A"
-    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]):  return "B"
-    if thumb_index_dist > palm_size * 0.6 and spread < 1.2:             return "C"
-    if thumb_up and index_up:                                            return "L"
-    if index_up and middle_up and not ring_up:                           return "V"
-    if pinky_up:                                                         return "I"
-    if thumb_up and pinky_up:                                            return "Y"
-    if index_up and middle_up and spread < 1.1:                          return "U"
-    if thumb_index_dist < palm_size * 0.3:                               return "F"
+    if thumb_up and index_up and not middle_up and not ring_up:
+        return "6"
+    if thumb_up and index_up and middle_up and not ring_up:
+        return "7"
+    if index_up and middle_up and ring_up and pinky_up:
+        return "8"
+    if all(fingers):
+        return "9"
 
     return str(sum(fingers))
-
-# -----------------------------
-# HILFSFUNKTIONEN
-# -----------------------------
-def draw_prediction_label(img, text):
-    img_copy = img.copy()
-    cv2.rectangle(img_copy, (10, 10), (300, 80), (0, 0, 0), -1)
-    cv2.putText(img_copy, text, (20, 55),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.2,
-                (0, 255, 255), 3, cv2.LINE_AA)
-    return img_copy
-
-def create_symbol_image(symbol):
-    canvas = np.zeros((300, 300, 3), dtype=np.uint8)
-    cv2.putText(canvas, str(symbol),
-                (80, 200),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                5,
-                (255, 255, 255),
-                8,
-                cv2.LINE_AA)
-    return canvas
 
 # -----------------------------
 # PREPROCESS
@@ -224,8 +194,10 @@ def preprocess(img):
 def speak(text):
     tts = gTTS(text=text, lang="en")
     tts.save("speech.mp3")
+
     audio = open("speech.mp3", "rb").read()
     b64 = base64.b64encode(audio).decode()
+
     st.markdown(f"""
     <audio autoplay>
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
@@ -233,18 +205,35 @@ def speak(text):
     """, unsafe_allow_html=True)
 
 # -----------------------------
+# SYMBOL IMAGE
+# -----------------------------
+def create_symbol_image(symbol):
+    canvas = np.zeros((300, 300, 3), dtype=np.uint8)
+    cv2.putText(canvas, str(symbol), (80, 200),
+                cv2.FONT_HERSHEY_SIMPLEX, 5,
+                (255, 255, 255), 8, cv2.LINE_AA)
+    return canvas
+
+def draw_prediction_label(img, text):
+    img_copy = img.copy()
+    cv2.rectangle(img_copy, (10, 10), (350, 90), (0, 0, 0), -1)
+    cv2.putText(img_copy, text, (20, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.2,
+                (0, 255, 255), 3)
+    return img_copy
+
+# -----------------------------
 # UPLOAD
 # -----------------------------
 uploaded_file = st.file_uploader(T["upload"], type=["jpg","png","jpeg"])
 
 if uploaded_file:
+
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # -------------------------
     # MODEL A
-    # -------------------------
     result = hands.process(rgb)
     model_a_label = T["nohand"]
 
@@ -253,32 +242,22 @@ if uploaded_file:
             mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
-    # -------------------------
     # MODEL B
-    # -------------------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
-    idx   = int(np.argmax(preds))
-    conf  = float(preds[idx])
+    idx = int(np.argmax(preds))
+    conf = float(preds[idx])
+
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
     final = f"{label} ({conf:.2f})" if conf > 0.85 else "Uncertain"
 
     if conf > 0.85:
         speak(label)
 
-    # -------------------------
-    # BILDER VORBEREITEN (BGR → RGB für st.image)
-    # -------------------------
-    annotated_img = cv2.cvtColor(
-        draw_prediction_label(img, f"{label} ({conf:.2f})"),
-        cv2.COLOR_BGR2RGB
-    )
+    # EXTRA IMAGES
+    annotated_img = draw_prediction_label(img, f"{label} ({conf:.2f})")
     symbol_img = create_symbol_image(label if conf > 0.85 else "?")
-    # symbol_img ist reines numpy-Array (schwarz/weiß), kein cvtColor nötig
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # -------------------------
-    # UI – DREI SPALTEN
-    # -------------------------
+    # UI
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -291,17 +270,15 @@ if uploaded_file:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟣 {T['modelB']}")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
-        st.write(f"Index: {idx}")
-        st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
-        st.image(annotated_img, caption="Model B Result", use_container_width=True)
+        st.image(annotated_img, caption="Model B View", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🟢 {T['final']}")
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
-        st.image(symbol_img, caption="AI Symbol View", use_container_width=True)
+        st.image(symbol_img, caption="AI Symbol", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.image(img_rgb, caption="Original Input", use_container_width=True)
+    st.image(img, caption="Original Input", use_container_width=True)
