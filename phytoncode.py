@@ -47,40 +47,67 @@ TEXT = {
 T = TEXT[lang]
 
 # -----------------------------
-# CSS
+# CSS (DARK DASHBOARD STYLE)
 # -----------------------------
 st.markdown("""
 <style>
+body {
+    background-color: #0f172a;
+}
+
 .main-title {
-    font-size: 46px;
+    font-size: 52px;
     font-weight: 900;
     text-align: center;
     background: linear-gradient(90deg,#00ffd5,#3b82f6,#a855f7);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
+
 .card {
-    background: rgba(255,255,255,0.07);
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.25);
-    backdrop-filter: blur(14px);
+    background: rgba(255,255,255,0.06);
+    border-radius: 22px;
+    padding: 22px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+    backdrop-filter: blur(18px);
     border: 1px solid rgba(255,255,255,0.08);
-    transition: 0.3s;
+    transition: 0.25s ease-in-out;
 }
+
 .card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-5px);
 }
+
 .metric {
-    font-size: 34px;
-    font-weight: 800;
+    font-size: 40px;
+    font-weight: 900;
     text-align: center;
-    margin-top: 10px;
+    margin: 10px 0;
+}
+
+.small {
+    opacity: 0.7;
+    text-align: center;
+    font-size: 13px;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 700;
+    opacity: 0.85;
+    margin-bottom: 10px;
+}
+
+img {
+    border-radius: 16px;
 }
 </style>
 """, unsafe_allow_html=True)
 
+# -----------------------------
+# HEADER
+# -----------------------------
 colL, colR = st.columns([6, 1])
 
 with colL:
@@ -90,7 +117,7 @@ with colR:
     st.button("🇩🇪 / 🇬🇧", on_click=toggle_lang)
 
 # -----------------------------
-# MODEL B (TensorFlow)
+# MODEL
 # -----------------------------
 @st.cache_resource
 def load_model():
@@ -108,7 +135,7 @@ CLASS_NAMES = load_labels()
 # MEDIA PIPE
 # -----------------------------
 mp_hands = mp.solutions.hands
-mp_draw  = mp.solutions.drawing_utils
+mp_draw = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     static_image_mode=True,
@@ -123,25 +150,18 @@ def model_a_feature_vector(lm):
     def dist(a, b):
         return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-    wrist      = lm[0]
-    thumb_tip  = lm[4]
-    index_tip  = lm[8]
-    middle_tip = lm[12]
-    ring_tip   = lm[16]
-    pinky_tip  = lm[20]
+    wrist = lm[0]
+    thumb = lm[4]
+    index = lm[8]
+    middle = lm[12]
+    ring = lm[16]
+    pinky = lm[20]
 
-    index_mcp  = lm[5]
-    middle_mcp = lm[9]
-    ring_mcp   = lm[13]
-    pinky_mcp  = lm[17]
-
-    palm_size = dist(wrist, middle_mcp)
-
-    index_up  = index_tip.y  < lm[6].y
-    middle_up = middle_tip.y < lm[10].y
-    ring_up   = ring_tip.y   < lm[14].y
-    pinky_up  = pinky_tip.y  < lm[18].y
-    thumb_up  = thumb_tip.x  < lm[3].x
+    index_up = index.y < lm[6].y
+    middle_up = middle.y < lm[10].y
+    ring_up = ring.y < lm[14].y
+    pinky_up = pinky.y < lm[18].y
+    thumb_up = thumb.x < lm[3].x
 
     fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
@@ -157,23 +177,23 @@ def model_a_feature_vector(lm):
 # -----------------------------
 # HELPERS
 # -----------------------------
-def create_symbol_image(symbol):
-    canvas = np.zeros((300, 300, 3), dtype=np.uint8)
-    cv2.putText(canvas, str(symbol),
-                (80, 200),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                5,
-                (255, 255, 255),
-                8,
-                cv2.LINE_AA)
-    return canvas
-
 IMG_SIZE = 224
 
 def preprocess(img):
     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
     return np.expand_dims(img, axis=0)
+
+def create_symbol_image(symbol):
+    canvas = np.zeros((300, 300, 3), dtype=np.uint8)
+    cv2.putText(canvas, str(symbol),
+                (70, 180),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                5,
+                (255, 255, 255),
+                10,
+                cv2.LINE_AA)
+    return canvas
 
 def speak(text):
     tts = gTTS(text=text, lang="en")
@@ -199,7 +219,7 @@ if uploaded_file:
     img_a = img.copy()
     img_b = img.copy()
 
-    # ---------------- MODEL A ----------------
+    # MODEL A
     result = hands.process(rgb)
     model_a_label = T["nohand"]
 
@@ -208,7 +228,7 @@ if uploaded_file:
             mp_draw.draw_landmarks(img_a, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
-    # ---------------- MODEL B (NO OVERLAY ANYMORE) ----------------
+    # MODEL B (clean)
     preds = model.predict(preprocess(rgb), verbose=0)[0]
     idx = int(np.argmax(preds))
     conf = float(preds[idx])
@@ -219,38 +239,34 @@ if uploaded_file:
     if conf > 0.85:
         speak(label)
 
-    # ❗ NO BLACK OVERLAY HERE ANYMORE
     model_b_img = cv2.cvtColor(img_b, cv2.COLOR_BGR2RGB)
 
     symbol_img = create_symbol_image(label if conf > 0.85 else "?")
 
-    # ---------------- UI ----------------
+    # -----------------------------
+    # UI (3-CARD LAYOUT LIKE IMAGE)
+    # -----------------------------
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f"### 🔵 {T['modelA']}")
+        st.markdown(f"<div class='section-title'>🔵 {T['modelA']}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='metric'>{model_a_label}</div>", unsafe_allow_html=True)
-        st.image(cv2.cvtColor(img_a, cv2.COLOR_BGR2RGB),
-                 caption="Model A Output",
-                 use_column_width=True)
+        st.image(cv2.cvtColor(img_a, cv2.COLOR_BGR2RGB), use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f"### 🟣 {T['modelB']}")
+        st.markdown(f"<div class='section-title'>🟣 {T['modelB']}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
         st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
-
-        # NO OVERLAY IMAGE ANYMORE
-        st.image(model_b_img, caption="Model B Result (clean)", use_column_width=True)
-
+        st.image(model_b_img, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f"### 🟢 {T['final']}")
+        st.markdown(f"<div class='section-title'>🟢 {T['final']}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
-        st.image(symbol_img, caption="AI Symbol View", use_column_width=True)
+        st.image(symbol_img, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
