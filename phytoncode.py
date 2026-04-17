@@ -267,12 +267,14 @@ if uploaded_file:
     if conf > 0.85:
         speak(label)
 
-    # -------------------------
+ # -------------------------
     # BILDER VORBEREITEN
     # -------------------------
     annotated_img = draw_prediction_label(img, f"{label} ({conf:.2f})")
-    symbol_img    = create_symbol_image(label if conf > 0.85 else "?")
+    annotated_img = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)  # BGR → RGB
 
+    symbol_img = create_symbol_image(label if conf > 0.85 else "?")
+    symbol_img = cv2.cvtColor(symbol_img, cv2.COLOR_BGR2RGB)        # BGR → RGB
     # -------------------------
     # UI – DREI SPALTEN
     # -------------------------
