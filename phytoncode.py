@@ -138,22 +138,20 @@ def model_a_feature_vector(lm):
         cosine = np.dot(ab, cb) / (np.linalg.norm(ab) * np.linalg.norm(cb) + 1e-6)
         return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
-    wrist = lm[0]
-    thumb_tip = lm[4]
-    index_tip = lm[8]
+    wrist      = lm[0]
+    thumb_tip  = lm[4]
+    index_tip  = lm[8]
     middle_tip = lm[12]
-    ring_tip = lm[16]
-    pinky_tip = lm[20]
-    index_mcp = lm[5]
+    ring_tip   = lm[16]
+    pinky_tip  = lm[20]
+    index_mcp  = lm[5]
     middle_mcp = lm[9]
-    ring_mcp = lm[13]
-    pinky_mcp = lm[17]
+    ring_mcp   = lm[13]
+    pinky_mcp  = lm[17]
 
-    palm_size = dist(wrist, middle_mcp)
-    spread = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
-
+    palm_size       = dist(wrist, middle_mcp)
+    spread          = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
     thumb_index_dist = dist(thumb_tip, index_tip)
-    thumb_palm_dist = dist(thumb_tip, wrist)
 
     index_up  = index_tip.y  < lm[6].y
     middle_up = middle_tip.y < lm[10].y
@@ -164,27 +162,27 @@ def model_a_feature_vector(lm):
     fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
     # NUMBERS
-    if not any(fingers):                                        return "0"
-    if fingers == (0,1,0,0,0):                                 return "1"
-    if fingers == (0,1,1,0,0):                                 return "2"
-    if fingers == (0,1,1,1,0):                                 return "3"
-    if fingers == (0,1,1,1,1):                                 return "4"
-    if fingers == (1,1,1,1,1):                                 return "5"
-    if thumb_up and index_up and not middle_up and not ring_up: return "6"
-    if thumb_up and index_up and middle_up and not ring_up:     return "7"
+    if not any(fingers):                                                  return "0"
+    if fingers == (0,1,0,0,0):                                           return "1"
+    if fingers == (0,1,1,0,0):                                           return "2"
+    if fingers == (0,1,1,1,0):                                           return "3"
+    if fingers == (0,1,1,1,1):                                           return "4"
+    if fingers == (1,1,1,1,1):                                           return "5"
+    if thumb_up and index_up and not middle_up and not ring_up:          return "6"
+    if thumb_up and index_up and middle_up and not ring_up:              return "7"
     if index_up and middle_up and ring_up and pinky_up and spread > 1.4: return "8"
     if index_up and middle_up and ring_up and pinky_up and thumb_up:     return "9"
 
     # LETTERS
-    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up: return "A"
-    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]): return "B"
-    if thumb_index_dist > palm_size * 0.6 and spread < 1.2:            return "C"
-    if thumb_up and index_up:                                           return "L"
-    if index_up and middle_up and not ring_up:                          return "V"
-    if pinky_up:                                                        return "I"
-    if thumb_up and pinky_up:                                           return "Y"
-    if index_up and middle_up and spread < 1.1:                         return "U"
-    if thumb_index_dist < palm_size * 0.3:                              return "F"
+    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:  return "A"
+    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]):  return "B"
+    if thumb_index_dist > palm_size * 0.6 and spread < 1.2:             return "C"
+    if thumb_up and index_up:                                            return "L"
+    if index_up and middle_up and not ring_up:                           return "V"
+    if pinky_up:                                                         return "I"
+    if thumb_up and pinky_up:                                            return "Y"
+    if index_up and middle_up and spread < 1.1:                          return "U"
+    if thumb_index_dist < palm_size * 0.3:                               return "F"
 
     return str(sum(fingers))
 
@@ -267,14 +265,17 @@ if uploaded_file:
     if conf > 0.85:
         speak(label)
 
- # -------------------------
-    # BILDER VORBEREITEN
     # -------------------------
-    annotated_img = draw_prediction_label(img, f"{label} ({conf:.2f})")
-    annotated_img = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)  # BGR → RGB
-
+    # BILDER VORBEREITEN (BGR → RGB für st.image)
+    # -------------------------
+    annotated_img = cv2.cvtColor(
+        draw_prediction_label(img, f"{label} ({conf:.2f})"),
+        cv2.COLOR_BGR2RGB
+    )
     symbol_img = create_symbol_image(label if conf > 0.85 else "?")
-    symbol_img = cv2.cvtColor(symbol_img, cv2.COLOR_BGR2RGB)        # BGR → RGB
+    # symbol_img ist reines numpy-Array (schwarz/weiß), kein cvtColor nötig
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
     # -------------------------
     # UI – DREI SPALTEN
     # -------------------------
@@ -291,6 +292,7 @@ if uploaded_file:
         st.markdown(f"### 🟣 {T['modelB']}")
         st.markdown(f"<div class='metric'>{label}</div>", unsafe_allow_html=True)
         st.write(f"Index: {idx}")
+        st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
         st.image(annotated_img, caption="Model B Result", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -302,5 +304,4 @@ if uploaded_file:
         st.image(symbol_img, caption="AI Symbol View", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Original-Bild auch konvertieren
-    st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Original Input", use_container_width=True)
+    st.image(img_rgb, caption="Original Input", use_container_width=True)
