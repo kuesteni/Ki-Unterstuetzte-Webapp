@@ -48,14 +48,11 @@ TEXT = {
 T = TEXT[lang]
 
 # -----------------------------
-# UI STYLE (MATCH IMAGE)
+# UI STYLE
 # -----------------------------
 st.markdown("""
 <style>
-
-body {
-    background: #0b1220;
-}
+body { background: #0b1220; }
 
 .main-title {
     font-size: 46px;
@@ -64,22 +61,6 @@ body {
     background: linear-gradient(90deg,#00ffd5,#4f8cff,#c084fc);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    margin-bottom: 10px;
-}
-
-.topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 20px;
-}
-
-.lang-btn {
-    background: rgba(255,255,255,0.08);
-    padding: 8px 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.15);
-    cursor: pointer;
 }
 
 .card {
@@ -87,31 +68,17 @@ body {
     border-radius: 20px;
     padding: 18px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-    backdrop-filter: blur(18px);
-    border: 1px solid rgba(255,255,255,0.08);
-}
-
-.card:hover {
-    transform: translateY(-4px);
-    transition: 0.3s;
 }
 
 .section-title {
     font-size: 14px;
     opacity: 0.8;
-    margin-bottom: 8px;
 }
 
 .big-number {
     font-size: 34px;
     font-weight: 800;
     text-align: center;
-    margin: 10px 0;
-}
-
-.conf-bar {
-    height: 10px;
-    border-radius: 10px;
 }
 
 .result-box {
@@ -126,17 +93,6 @@ body {
     font-weight: 900;
     color: white;
 }
-
-.small {
-    font-size: 12px;
-    opacity: 0.7;
-    text-align: center;
-}
-
-img {
-    border-radius: 14px;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,7 +135,7 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# FEATURE MODEL A
+# MODEL A
 # -----------------------------
 def model_a_feature_vector(lm):
     thumb = lm[4]
@@ -205,18 +161,6 @@ def preprocess(img):
     img = cv2.resize(img, (224, 224))
     img = img / 255.0
     return np.expand_dims(img, axis=0)
-
-def speak(text):
-    tts = gTTS(text=text, lang="en")
-    tts.save("speech.mp3")
-    audio = open("speech.mp3", "rb").read()
-    b64 = base64.b64encode(audio).decode()
-
-    st.markdown(f"""
-    <audio autoplay>
-        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-    </audio>
-    """, unsafe_allow_html=True)
 
 # -----------------------------
 # UPLOAD
@@ -246,10 +190,18 @@ if uploaded_file:
 
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
 
-    final_label = f"{label} ({conf:.2f})" if conf > 0.85 else "Uncertain"
+    # ---------------- 🔥 FIXED FUSION LOGIC ----------------
+    try:
+        model_a_value = int(model_a_label)
+    except:
+        model_a_value = None
 
     if conf > 0.85:
-        speak(label)
+        final = label
+    elif model_a_value is not None:
+        final = str(model_a_value)
+    else:
+        final = label
 
     # ---------------- IMAGE ----------------
     img_b = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -257,7 +209,6 @@ if uploaded_file:
     # ---------------- UI ----------------
     col1, col2, col3 = st.columns(3)
 
-    # -------- MODEL A --------
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"<div class='section-title'>🔵 {T['modelA']}</div>", unsafe_allow_html=True)
@@ -265,7 +216,6 @@ if uploaded_file:
         st.image(cv2.cvtColor(img_a, cv2.COLOR_BGR2RGB), use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # -------- MODEL B --------
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"<div class='section-title'>🟣 {T['modelB']}</div>", unsafe_allow_html=True)
@@ -276,15 +226,14 @@ if uploaded_file:
         st.image(img_b, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # -------- FINAL --------
     with col3:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"<div class='section-title'>🟢 {T['final']}</div>", unsafe_allow_html=True)
 
-        st.markdown("""
+        st.markdown(f"""
         <div class="result-box">
             <div class="result-number">
-        """ + str(label if conf > 0.85 else "?") + """
+                {final}
             </div>
         </div>
         """, unsafe_allow_html=True)
