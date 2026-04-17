@@ -138,6 +138,7 @@ def model_a_feature_vector(lm):
     middle_tip = lm[12]
     ring_tip   = lm[16]
     pinky_tip  = lm[20]
+
     index_mcp  = lm[5]
     middle_mcp = lm[9]
     ring_mcp   = lm[13]
@@ -155,30 +156,27 @@ def model_a_feature_vector(lm):
 
     fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
-    if not any(fingers):                                                   return "0"
-    if fingers == (0,1,0,0,0):                                            return "1"
-    if fingers == (0,1,1,0,0):                                            return "2"
-    if fingers == (0,1,1,1,0):                                            return "3"
-    if fingers == (0,1,1,1,1):                                            return "4"
-    if fingers == (1,1,1,1,1):                                            return "5"
-    if thumb_up and index_up and not middle_up and not ring_up:           return "6"
-    if thumb_up and index_up and middle_up and not ring_up:               return "7"
-    if index_up and middle_up and ring_up and pinky_up and spread > 1.4:  return "8"
-    if index_up and middle_up and ring_up and pinky_up and thumb_up:      return "9"
-    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:   return "A"
-    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]):   return "B"
-    if thumb_index_dist > palm_size * 0.6 and spread < 1.2:              return "C"
-    if thumb_up and index_up:                                             return "L"
-    if index_up and middle_up and not ring_up:                            return "V"
-    if pinky_up:                                                          return "I"
-    if thumb_up and pinky_up:                                             return "Y"
-    if index_up and middle_up and spread < 1.1:                           return "U"
-    if thumb_index_dist < palm_size * 0.3:                                return "F"
+    if not any(fingers): return "0"
+    if fingers == (0,1,0,0,0): return "1"
+    if fingers == (0,1,1,0,0): return "2"
+    if fingers == (0,1,1,1,0): return "3"
+    if fingers == (0,1,1,1,1): return "4"
+    if fingers == (1,1,1,1,1): return "5"
+    if thumb_up and index_up and not middle_up and not ring_up: return "6"
+    if thumb_up and index_up and middle_up and not ring_up: return "7"
+    if index_up and middle_up and ring_up and pinky_up and spread > 1.4: return "8"
+    if index_up and middle_up and ring_up and pinky_up and thumb_up: return "9"
+    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up: return "A"
+    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]): return "B"
+    if thumb_index_dist > palm_size * 0.6 and spread < 1.2: return "C"
+    if thumb_up and index_up: return "L"
+    if index_up and middle_up and not ring_up: return "V"
+    if pinky_up: return "I"
 
     return str(sum(fingers))
 
 # -----------------------------
-# HILFSFUNKTIONEN
+# HELPERS
 # -----------------------------
 def draw_prediction_label(img, text):
     img_copy = img.copy()
@@ -224,49 +222,60 @@ def speak(text):
     """, unsafe_allow_html=True)
 
 # -----------------------------
-# UPLOAD
+# UPLOAD (UPDATED PART INTEGRATED)
 # -----------------------------
 uploaded_file = st.file_uploader(T["upload"], type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    img        = cv2.imdecode(file_bytes, 1)
-    rgb        = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.imdecode(file_bytes, 1)
 
-    # MODEL A
-    result        = hands.process(rgb)
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    # separate copies
+    img_a = img.copy()
+    img_b = img.copy()
+
+    # ---------------- MODEL A ----------------
+    result = hands.process(rgb)
     model_a_label = T["nohand"]
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
-            mp_draw.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            mp_draw.draw_landmarks(img_a, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             model_a_label = model_a_feature_vector(hand_landmarks.landmark)
 
-    # MODEL B
+    # ---------------- MODEL B (NO LANDMARKS) ----------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
-    idx   = int(np.argmax(preds))
-    conf  = float(preds[idx])
+    idx = int(np.argmax(preds))
+    conf = float(preds[idx])
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
+
     final = f"{label} ({conf:.2f})" if conf > 0.85 else "Uncertain"
 
     if conf > 0.85:
         speak(label)
 
-    # BILDER VORBEREITEN (BGR → RGB)
     annotated_img = cv2.cvtColor(
-        draw_prediction_label(img, f"{label} ({conf:.2f})"),
+        draw_prediction_label(img_b, f"{label} ({conf:.2f})"),
         cv2.COLOR_BGR2RGB
     )
-    symbol_img = create_symbol_image(label if conf > 0.85 else "?")
-    img_rgb    = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # UI
+    symbol_img = create_symbol_image(label if conf > 0.85 else "?")
+
+    # ---------------- UI ----------------
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"### 🔵 {T['modelA']}")
         st.markdown(f"<div class='metric'>{model_a_label}</div>", unsafe_allow_html=True)
+
+        # IMAGE UNDER MODEL A
+        st.image(cv2.cvtColor(img_a, cv2.COLOR_BGR2RGB),
+                 caption="Model A Output",
+                 use_column_width=True)
+
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -285,5 +294,3 @@ if uploaded_file:
         st.markdown(f"<div class='metric'>{final}</div>", unsafe_allow_html=True)
         st.image(symbol_img, caption="AI Symbol View", use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
-    st.image(img_rgb, caption="Original Input", use_column_width=True)
