@@ -109,28 +109,49 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# MODEL A (FEATURE-BASED - 20 CLASSES)
+# MODEL A (ADVANCED FEATURE + ANGLES + DISTANCES)
 # -----------------------------
 def model_a_feature_vector(lm):
     def dist(a, b):
         return math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2)
 
-    thumb = 1 if lm[4].x < lm[3].x else 0
-    index = 1 if lm[8].y < lm[6].y else 0
-    middle = 1 if lm[12].y < lm[10].y else 0
-    ring = 1 if lm[16].y < lm[14].y else 0
-    pinky = 1 if lm[20].y < lm[18].y else 0
+    def angle(a, b, c):
+        ab = np.array([a.x - b.x, a.y - b.y])
+        cb = np.array([c.x - b.x, c.y - b.y])
 
-    fingers = (thumb, index, middle, ring, pinky)
+        cosine = np.dot(ab, cb) / (np.linalg.norm(ab) * np.linalg.norm(cb) + 1e-6)
+        return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
-    palm_size = dist(lm[0], lm[9])
-    spread = dist(lm[5], lm[17]) / (palm_size + 1e-6)
+    # landmarks
+    wrist = lm[0]
 
-    index_thumb = dist(lm[4], lm[8])
-    middle_thumb = dist(lm[4], lm[12])
+    thumb_tip = lm[4]
+    index_tip = lm[8]
+    middle_tip = lm[12]
+    ring_tip = lm[16]
+    pinky_tip = lm[20]
+
+    index_mcp = lm[5]
+    middle_mcp = lm[9]
+    ring_mcp = lm[13]
+    pinky_mcp = lm[17]
+
+    palm_size = dist(wrist, middle_mcp)
+    spread = dist(index_mcp, pinky_mcp) / (palm_size + 1e-6)
+
+    thumb_index_dist = dist(thumb_tip, index_tip)
+    thumb_palm_dist = dist(thumb_tip, wrist)
+
+    index_up = index_tip.y < lm[6].y
+    middle_up = middle_tip.y < lm[10].y
+    ring_up = ring_tip.y < lm[14].y
+    pinky_up = pinky_tip.y < lm[18].y
+    thumb_up = thumb_tip.x < lm[3].x
+
+    fingers = (thumb_up, index_up, middle_up, ring_up, pinky_up)
 
     # ---------------- NUMBERS ----------------
-    if fingers == (0,0,0,0,0):
+    if not any(fingers):
         return "0"
     if fingers == (0,1,0,0,0):
         return "1"
@@ -143,32 +164,45 @@ def model_a_feature_vector(lm):
     if fingers == (1,1,1,1,1):
         return "5"
 
+    # improved 6–9
+    if thumb_up and index_up and not middle_up and not ring_up:
+        return "6"
+
+    if thumb_up and index_up and middle_up and not ring_up:
+        return "7"
+
+    if index_up and middle_up and ring_up and pinky_up and spread > 1.4:
+        return "8"
+
+    if index_up and middle_up and ring_up and pinky_up and thumb_up:
+        return "9"
+
     # ---------------- LETTERS ----------------
-    if thumb == 1 and index == 0 and middle == 0:
+    if not any([index_up, middle_up, ring_up, pinky_up]) and thumb_up:
         return "A"
 
-    if fingers == (0,1,1,1,1):
+    if not thumb_up and all([index_up, middle_up, ring_up, pinky_up]):
         return "B"
 
-    if index_thumb < middle_thumb and spread > 1.2:
+    if thumb_index_dist > palm_size * 0.6 and spread < 1.2:
         return "C"
 
-    if fingers == (1,1,0,0,0):
+    if thumb_up and index_up:
         return "L"
 
-    if fingers == (0,1,1,0,0):
+    if index_up and middle_up and not ring_up:
         return "V"
 
-    if fingers == (0,0,0,0,1):
+    if pinky_up:
         return "I"
 
-    if fingers == (1,0,0,0,1):
+    if thumb_up and pinky_up:
         return "Y"
 
-    if fingers == (0,1,1,0,0) and spread > 1.3:
+    if index_up and middle_up and spread < 1.1:
         return "U"
 
-    if index == 1 and thumb == 1:
+    if thumb_index_dist < palm_size * 0.3:
         return "F"
 
     return str(sum(fingers))
