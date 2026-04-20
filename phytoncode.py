@@ -1,12 +1,12 @@
 import streamlit as st
 import numpy as np
-import cv2
 import os
 import mediapipe as mp
 import tensorflow as tf
 from gtts import gTTS
 import base64
 import math
+from PIL import Image
 
 # -----------------------------
 # CONFIG
@@ -39,7 +39,7 @@ TEXT = {
         "title": "🤖 KI Hand Erkennungssystem",
         "upload": "Bild hochladen",
         "modelA": "Modell A (Feature KI)",
-        "modelB": "Modell B (Neuronales Netz)",
+        "modelB": "Neuronales Netz",
         "final": "Endergebnis",
         "nohand": "Keine Hand erkannt",
     }
@@ -135,7 +135,7 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# MODEL A (20-KLASSEN LOGIK)
+# MODEL A
 # -----------------------------
 def model_a_predict(lm):
 
@@ -154,7 +154,6 @@ def model_a_predict(lm):
         (False, True, True, True, False): "3",
         (False, True, True, True, True): "4",
         (True, True, True, True, True): "5",
-
         (True, False, False, False, False): "A",
         (True, True, False, False, False): "B",
         (True, True, True, False, False): "C",
@@ -170,11 +169,11 @@ def model_a_predict(lm):
     return gesture_map.get(fingers, "Unknown")
 
 # -----------------------------
-# HELPERS
+# HELPERS (NO OPENCV)
 # -----------------------------
 def preprocess(img):
-    img = cv2.resize(img, (224, 224))
-    img = img / 255.0
+    img = img.resize((224, 224))
+    img = np.array(img) / 255.0
     return np.expand_dims(img, axis=0)
 
 # -----------------------------
@@ -184,9 +183,10 @@ uploaded_file = st.file_uploader(T["upload"], type=["jpg","png","jpeg"])
 
 if uploaded_file:
 
-    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, 1)
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # PIL IMAGE (REPLACES OPENCV)
+    image = Image.open(uploaded_file).convert("RGB")
+    img = np.array(image)
+    rgb = img
 
     # ---------------- MODEL A ----------------
     result = hands.process(rgb)
@@ -199,7 +199,7 @@ if uploaded_file:
             model_a_label = model_a_predict(hand_landmarks.landmark)
 
     # ---------------- MODEL B ----------------
-    preds = model.predict(preprocess(rgb), verbose=0)[0]
+    preds = model.predict(preprocess(image), verbose=0)[0]
     idx = np.argmax(preds)
     conf = float(preds[idx])
 
@@ -213,9 +213,6 @@ if uploaded_file:
     else:
         final = label
 
-    # ---------------- IMAGE ----------------
-    img_b = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
     # ---------------- UI ----------------
     col1, col2, col3 = st.columns(3)
 
@@ -223,7 +220,7 @@ if uploaded_file:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown(f"<div class='section-title'>🔵 {T['modelA']}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='big-number'>{model_a_label}</div>", unsafe_allow_html=True)
-        st.image(cv2.cvtColor(img_a, cv2.COLOR_BGR2RGB), use_column_width=True)
+        st.image(img_a, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -233,7 +230,7 @@ if uploaded_file:
         st.write(f"Index: {idx}")
         st.write(f"Confidence: {conf:.2f}")
         st.progress(conf)
-        st.image(img_b, use_column_width=True)
+        st.image(img, use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col3:
