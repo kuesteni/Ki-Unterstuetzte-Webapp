@@ -135,24 +135,39 @@ hands = mp_hands.Hands(
 )
 
 # -----------------------------
-# MODEL A
+# MODEL A (20-KLASSEN LOGIK)
 # -----------------------------
-def model_a_feature_vector(lm):
-    thumb = lm[4]
-    index = lm[8]
-    middle = lm[12]
-    ring = lm[16]
-    pinky = lm[20]
+def model_a_predict(lm):
 
-    fingers = (
-        thumb.x < lm[3].x,
-        index.y < lm[6].y,
-        middle.y < lm[10].y,
-        ring.y < lm[14].y,
-        pinky.y < lm[18].y
-    )
+    thumb = lm[4].x < lm[3].x
+    index = lm[8].y < lm[6].y
+    middle = lm[12].y < lm[10].y
+    ring = lm[16].y < lm[14].y
+    pinky = lm[20].y < lm[18].y
 
-    return str(sum(fingers))
+    fingers = (thumb, index, middle, ring, pinky)
+
+    gesture_map = {
+        (False, False, False, False, False): "0",
+        (False, True, False, False, False): "1",
+        (False, True, True, False, False): "2",
+        (False, True, True, True, False): "3",
+        (False, True, True, True, True): "4",
+        (True, True, True, True, True): "5",
+
+        (True, False, False, False, False): "A",
+        (True, True, False, False, False): "B",
+        (True, True, True, False, False): "C",
+        (False, False, False, False, True): "L",
+        (True, False, True, False, True): "V",
+        (False, True, False, True, False): "O",
+        (False, True, False, False, True): "I",
+        (False, True, True, False, True): "Y",
+        (True, False, False, True, False): "U",
+        (True, True, False, True, False): "F",
+    }
+
+    return gesture_map.get(fingers, "Unknown")
 
 # -----------------------------
 # HELPERS
@@ -181,7 +196,7 @@ if uploaded_file:
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(img_a, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-            model_a_label = model_a_feature_vector(hand_landmarks.landmark)
+            model_a_label = model_a_predict(hand_landmarks.landmark)
 
     # ---------------- MODEL B ----------------
     preds = model.predict(preprocess(rgb), verbose=0)[0]
@@ -190,16 +205,11 @@ if uploaded_file:
 
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
 
-    # ---------------- 🔥 FIXED FUSION LOGIC ----------------
-    try:
-        model_a_value = int(model_a_label)
-    except:
-        model_a_value = None
-
+    # ---------------- FUSION ----------------
     if conf > 0.85:
         final = label
-    elif model_a_value is not None:
-        final = str(model_a_value)
+    elif model_a_label != "Unknown" and model_a_label != T["nohand"]:
+        final = model_a_label
     else:
         final = label
 
@@ -237,6 +247,5 @@ if uploaded_file:
             </div>
         </div>
         """, unsafe_allow_html=True)
-
 
         st.markdown('</div>', unsafe_allow_html=True)
