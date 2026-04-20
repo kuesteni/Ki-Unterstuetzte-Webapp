@@ -123,6 +123,14 @@ def load_labels():
 CLASS_NAMES = load_labels()
 
 # -----------------------------
+# 🔥 DEBUG 1 (HIER SEHEN WIR MODELL & LABELS)
+# -----------------------------
+st.write("### 🔍 DEBUG INFO (MODEL CHECK)")
+st.write("MODEL OUTPUT SHAPE:", model.output_shape)
+st.write("LABEL COUNT:", len(CLASS_NAMES))
+st.write("CLASS NAMES:", CLASS_NAMES)
+
+# -----------------------------
 # MEDIA PIPE
 # -----------------------------
 mp_hands = mp.solutions.hands
@@ -169,7 +177,7 @@ def model_a_predict(lm):
     return gesture_map.get(fingers, "Unknown")
 
 # -----------------------------
-# HELPERS (NO OPENCV)
+# HELPERS
 # -----------------------------
 def preprocess(img):
     img = img.resize((224, 224))
@@ -183,9 +191,9 @@ uploaded_file = st.file_uploader(T["upload"], type=["jpg","png","jpeg"])
 
 if uploaded_file:
 
-    # PIL IMAGE (REPLACES OPENCV)
     image = Image.open(uploaded_file).convert("RGB")
     img = np.array(image)
+
     rgb = img
 
     # ---------------- MODEL A ----------------
@@ -204,6 +212,14 @@ if uploaded_file:
     conf = float(preds[idx])
 
     label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
+
+    # ---------------- 🔥 DEBUG 2 (HIER SEHEN WIR MODEL OUTPUT) ----------------
+    st.write("### 🔍 DEBUG MODEL PREDICTION")
+    st.write("RAW PREDICTION:", preds)
+    st.write("ARGMAX INDEX:", idx)
+    st.write("CONFIDENCE:", conf)
+    st.write("MAX PROB:", np.max(preds))
+    st.write("MIN PROB:", np.min(preds))
 
     # ---------------- FUSION ----------------
     if conf > 0.85:
