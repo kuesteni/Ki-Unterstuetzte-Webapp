@@ -30,8 +30,8 @@ TEXT = {
     "EN": {
         "title": "🤖 AI Hand Recognition System",
         "upload": "Upload Image",
-        "modelA": "Model A (Feature AI)",
-        "modelB": "Model B (Neural Network)",
+        "modelA": "Selected AI",
+        "modelB": "Custom Model",
         "final": "Final Result",
         "nohand": "No Hand Detected",
     },
