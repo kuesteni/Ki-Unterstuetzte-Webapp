@@ -38,8 +38,8 @@ TEXT = {
     "DE": {
         "title": "🤖 KI Hand Erkennungssystem",
         "upload": "Bild hochladen",
-        "modelA": "Modell A (Feature KI)",
-        "modelB": "Neuronales Netz",
+        "modelA": "Ausgewählte KI",
+        "modelB": "Eigenes Model",
         "final": "Endergebnis",
         "nohand": "Keine Hand erkannt",
     }
